@@ -1,29 +1,29 @@
-# Keamanan
+# Security
 
-Asmamir memegang kamera, mikrofon, dan tangkapan layar di mesin orang yang menjalankannya. Baca ini sebelum menjalankan, dan lagi sebelum push pertama.
+Asmamir uses the camera, the microphone, and screen capture on the machine where it runs. Read this before you run it, and again before the first push.
 
-## Mikrofon tetap menyala
+## The microphone stays on
 
-Selama `app.py` hidup, mikrofon terus didengar, termasuk saat belum ada jendela. Audio Inggris diproses di mesin ini dengan Vosk. Tidak ada pengiriman audio ke Google. Jangan jalankan di ruangan bersama tanpa orang-orang di situ mengetahuinya.
+While `app.py` is running, the microphone is listened to continuously, including when no window is visible. English audio is processed on this machine with Vosk. It is not sent to Google. Do not run it in a shared room unless the people there know.
 
-## Kamera terbuka tanpa jendela
+## The camera opens with no window
 
-Sebelum bangun, webcam dibuka tanpa jendela supaya jentikan ibu jari ke jari tengah terbaca. Lampu kamera menyala. Itu perilaku yang diharapkan.
+Before wake, the webcam opens with no window so a thumb-to-middle snap can be read. The camera light comes on. That is expected.
 
-## Tangkapan layar dan kendali jendela
+## Screen capture and window control
 
-Mode anime mengambil seluruh monitor utama lewat `mss` (GDI), lalu menunggu seretan mouse. Kode memanggil `user32` lewat ctypes untuk jendela paling atas, foreground, dan kursor sungguhan. Papan anime membuka Edge atau Chrome layar penuh dengan profil terpisah di `%LOCALAPPDATA%\asmamir\`.
+Anime mode captures the primary monitor through `mss` (GDI), then waits for a mouse drag. The code calls `user32` through ctypes for topmost windows, foreground, and the real cursor. The anime board opens Edge or Chrome fullscreen with a separate profile under `%LOCALAPPDATA%\asmamir\`.
 
-## Mulai otomatis tidak ikut repo
+## Autostart is not part of the repository
 
-`scripts/start_login.cmd` bisa disambungkan ke Task Scheduler di komputer sendiri. Repo tidak mendaftarkan tugas itu. Siapa pun yang mengkloning menyalakan `app.py` sendiri.
+You can attach `scripts/start_login.cmd` to Task Scheduler on your own computer. This repository does not register that task. Anyone who clones the project starts `app.py` themselves.
 
-## Rahasia tidak masuk git
+## Secrets do not go into git
 
-`.env` tidak di-commit. Nama, pelafalan, pilihan mikrofon, dan kunci Hermes lokal hanya ada di sana. `%LOCALAPPDATA%\hermes\.env` juga tetap di komputer sendiri. Jangan menempelkan nilai itu ke README, isu, atau riwayat commit.
+`.env` is not committed. Names, pronunciation, the microphone choice, and a local Hermes key belong only there. `%LOCALAPPDATA%\hermes\.env` also stays on the computer. Do not paste those values into the README, an issue, or a commit.
 
-## Sebelum push pertama
+## Before the first push
 
-Tinjau daftar berkas. `git status` dan `git ls-files` harus bebas dari `.env`, `venv/`, `models/`, `dataset/`, foto, `*.fbx`, `*.glb`, `*.usdz`, `*.npz`, arsip `*.zip` / `*.rar`, `web/hologram/source/`, `web/hologram/textures/`, `web/airbus/`, `web/deagle/`, gambar debug `_dbg_` dan `_try_`, serta log. Satu berkas besar yang lolos sudah cukup untuk mengedarkan aset yang lisensinya tidak mengizinkan edar ulang.
+Review the file list. `git status` and `git ls-files` must not contain `.env`, `venv/`, `models/`, `dataset/`, photos, `*.fbx`, `*.glb`, `*.usdz`, `*.npz`, `*.zip` or `*.rar` archives, `web/hologram/source/`, `web/hologram/textures/`, `web/airbus/`, `web/deagle/`, `_dbg_` and `_try_` debug images, or logs. One large file is enough to redistribute an asset whose license does not allow it.
 
-Aset Mixamo dan model pihak ketiga tidak boleh di-commit. Setiap orang mengunduh miliknya sendiri.
+Do not commit Mixamo assets or other third-party models. Each person downloads their own.

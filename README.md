@@ -1,23 +1,23 @@
 # Asmamir Computer Vision
 
-Aplikasi desktop Windows. Satu proses, `app.py`, memakai webcam dan mikrofon di komputer ini. Setelah logon tidak ada jendela. Bangun dengan jentikan ibu jari ke jari tengah, atau dengan suara `asmamir`. Setelah bangun, yang tampil adalah hologram siaga. Perintah suara membuka mode lain. Pengenalan suara Inggris memakai Vosk di mesin lokal.
+Asmamir Computer Vision is a Windows desktop application. One process, `app.py`, uses the webcam and microphone on this computer. After launch there is no window. Wake it with a thumb-to-middle finger snap, or by saying `asmamir`. The standby view is a hologram. Voice commands open the other modes. English speech recognition runs locally with Vosk.
 
-Kode Python dan HTML di repo ini dilisensikan MIT. Aset pihak ketiga tidak termasuk. Lihat [SECURITY.md](SECURITY.md) sebelum menjalankan atau memublikasikan salinan.
+The Python and HTML written for this project are MIT licensed. Third-party assets are not included. Read [SECURITY.md](SECURITY.md) before you run a copy or publish one.
 
-## Yang tidak ada di repo
+## What is not in this repository
 
-Setiap orang mengunduh asetnya sendiri. Jangan menambahkan berkas ini ke git:
+Download these yourself. Do not add them to git:
 
-- Model Vosk, cache Whisper, suara Piper, dan bobot lain di `models/`.
-- Clip FBX Mixamo. Lisensi Mixamo pada umumnya tidak mengizinkan mengedarkan ulang file FBX. Nama yang dipakai kode, di `web/hologram/`: `asmamir_situp_to_idle.fbx`, `asmamir_rumba_dancing.fbx`, `asmamir_salsa_dancing.fbx`, `asmamir_dancing_twerk.fbx`.
-- Model 3D lain (`*.glb`, `*.usdz`, `*.npz`), tekstur, folder `web/hologram/source/`, `web/airbus/`, dan `web/deagle/`.
-- `.env`, `venv/`, `dataset/`, `dataset_aug/`, dan log lokal.
+- The Vosk model, the Whisper cache, the Piper voice, and any other weights under `models/`.
+- Mixamo FBX clips. The Mixamo license generally does not allow redistributing the FBX files. The names the code expects, in `web/hologram/`, are `asmamir_situp_to_idle.fbx`, `asmamir_rumba_dancing.fbx`, `asmamir_salsa_dancing.fbx`, and `asmamir_dancing_twerk.fbx`.
+- Other 3D models (`*.glb`, `*.usdz`, `*.npz`), textures, and the folders `web/hologram/source/`, `web/airbus/`, and `web/deagle/`.
+- `.env`, `venv/`, `dataset/`, `dataset_aug/`, and local logs.
 
-Tanpa clip FBX, bangun tetap bisa, tetapi hologram tidak punya gerak.
+Without the FBX clips the app can still wake, but the hologram has no motion.
 
-## Pemasangan (Windows, Python 3.12)
+## Setup (Windows, Python 3.12)
 
-Lingkungan pengembangan ini memakai Python 3.12. `requirements.txt` adalah hasil `pip freeze` seluruh venv, bukan daftar minimal, dan berisi paket berat yang tidak diimpor aplikasi (termasuk `jax`). Untuk memasang yang benar-benar diimpor kode:
+Use Python 3.12. `requirements.txt` is a full `pip freeze` of one development environment, not a minimal install list. It includes heavy packages the application does not import, including `jax`. Install the packages the code actually imports:
 
 `opencv-python`, `mediapipe`, `numpy`, `SpeechRecognition`, `PyAudio`, `vosk`, `sounddevice`, `comtypes`, `piper-tts`, `faster-whisper`, `sympy`, `rapidocr-onnxruntime`, `pillow`, `mss`, `websockets`, `ufbx`.
 
@@ -27,52 +27,52 @@ venv\Scripts\python.exe -m pip install -U pip
 venv\Scripts\python.exe -m pip install opencv-python mediapipe numpy SpeechRecognition PyAudio vosk sounddevice comtypes piper-tts faster-whisper sympy rapidocr-onnxruntime pillow mss websockets ufbx
 ```
 
-`PyAudio` di Windows sering butuh wheel yang cocok dengan Python 3.12. Bila impor native gagal, pasang Microsoft Visual C++ Redistributable.
+On Windows, `PyAudio` often needs a wheel built for Python 3.12. If a native import fails, install the Microsoft Visual C++ Redistributable.
 
-`web/p5.min.js` adalah p5.js (LGPL-2.1). Berkas itu boleh ikut repo hanya bersama pemberitahuan lisensinya.
+`web/p5.min.js` is p5.js (LGPL-2.1). Keep it in the repository only together with its license notice.
 
-## Model suara
+## Speech models
 
-Vosk tidak di-vendor. Unduh `vosk-model-small-en-us-0.15` dari [alphacephei.com/vosk/models](https://alphacephei.com/vosk/models) dan ekstrak sehingga folder ini ada:
+The Vosk model is not vendored. Download `vosk-model-small-en-us-0.15` from [alphacephei.com/vosk/models](https://alphacephei.com/vosk/models) and extract it so this folder exists:
 
 `models/vosk-model-small-en-us-0.15`
 
-Di dalamnya ada `am/` dan `graph/`. `app.py` memuat path itu.
+It must contain `am/` and `graph/`. `app.py` loads that path.
 
-Bahasa Indonesia opsional. Suara Piper `id_ID-news_tts-medium.onnx` diletakkan di `models/piper/`. Whisper tiny diunduh `faster-whisper` ke `models/whisper/` pada pemakaian pertama. Keduanya tetap di luar git.
+Indonesian speech is optional. Place the Piper voice `id_ID-news_tts-medium.onnx` in `models/piper/`. On first use, `faster-whisper` downloads Whisper tiny into `models/whisper/`. Leave both out of git.
 
-## Hermes dan Ollama (opsional)
+## Hermes and Ollama (optional)
 
-Obrolan dan “lihat ini” mencoba Hermes `http://127.0.0.1:8642` lebih dulu, lalu Ollama `http://127.0.0.1:11434`. `app.py` tidak menyalakan gateway Hermes. Bila keduanya mati, aplikasi tetap jalan dan kalimat itu dilewati.
+Chat and “look at this” try Hermes at `http://127.0.0.1:8642` first, then Ollama at `http://127.0.0.1:11434`. `app.py` does not start the Hermes gateway. If both are down, the app keeps running and skips that sentence.
 
-Nama yang diucapkan aplikasi dibaca dari `.env` (berkas ini tidak di-commit):
+The spoken name is read from `.env`, which is not committed:
 
 - `ASMAMIR_USER_FULL_NAME`
 - `ASMAMIR_USER_NICKNAME`
 
-Bila kosong, yang dipakai adalah `User` dan `friend`. Pelafalan SAPI opsional lewat `ASMAMIR_SAID_FULL`, `ASMAMIR_SAID_GIVEN`, `ASMAMIR_SAID_FAMILY`, dan `ASMAMIR_SAID_NICK`. Mikrofon bisa diarahkan dengan `ASMAMIR_MIC`.
+When those are empty, the app uses `User` and `friend`. Optional SAPI pronunciation is `ASMAMIR_SAID_FULL`, `ASMAMIR_SAID_GIVEN`, `ASMAMIR_SAID_FAMILY`, and `ASMAMIR_SAID_NICK`. Point the microphone at a device with `ASMAMIR_MIC`.
 
-## Menjalankan
+## Run
 
 ```bat
 venv\Scripts\python.exe app.py
 ```
 
-Task Scheduler opsional dan tidak didaftarkan oleh repo. `scripts/start_login.cmd` bisa dijadikan tugas saat log on, tanpa admin. Skrip memakai folder proyek di atas folder `scripts`, bukan path seseorang. Ia memeriksa Hermes `http://127.0.0.1:8642/health`, menyalakan gateway lokal hanya bila health-nya mati dan peluncurnya ada, lalu `scripts/start_dsh.cmd` (`ollama launch dsh` bila proses itu belum jalan), lalu satu `app.py`. Tidak membuka jendela kamera kedua.
+Task Scheduler is optional and is not registered by this repository. You may point a logon task at `scripts/start_login.cmd` without administrator rights. The script uses the project folder above `scripts`. It checks Hermes at `http://127.0.0.1:8642/health`, starts the local gateway only when health is down and a launcher is present, then runs `scripts/start_dsh.cmd` (`ollama launch dsh` only if that process is not already running), then one `app.py`. It does not open a second camera window.
 
-## Perintah
+## Commands
 
-1. **Bangun.** Jentikan ibu jari ke jari tengah, atau ucapan nama Asmamir. Tepukan tidak membangunkan.
-2. **Siaga.** Hologram. Sit-up diputar sekali lalu ditahan. Cubit plus telunjuk tangan lain memutar orbit.
-3. **Dance.** Ucapan `dance`, atau jentikan yang sama setelah bangun, menggilir rumba, salsa, lalu twerk. `stop dance` atau `standby` memutar sit-up lagi.
-4. **Anime.** `anime` atau `stipple` (bukan `anime kamera`). Layar utama diambil, persegi panjang diseret, lalu `web/anime_board.html` menampilkan titik warna. Hati membesar dari tengah ke tepi selama 10 detik, lalu hilang, dan gambar membeku.
-5. **Canvas.** Hanya jika seluruh ucapan adalah `canvas`, `draw`, atau `drawing`.
-6. **YouTube.** `open youtube` membuka situs. `play …` atau `putar …` membuka hasil pertama.
-7. **Fog.** Hanya `fog mirror`.
-8. **Shutdown.** `shutdown`, `shut down`, `matikan`, atau tombol `q`.
+1. **Wake.** Thumb-to-middle snap, or the spoken name Asmamir. A clap does not wake the app.
+2. **Standby.** The hologram. The sit-up plays once and holds. A pinch plus the other index finger orbits the figure.
+3. **Dance.** The word `dance`, or the same snap after wake, cycles rumba, salsa, then twerk. `stop dance` or `standby` plays the sit-up again. A snap while the anime board is up does not cycle dance.
+4. **Anime.** `anime`, `stipple`, `stipple anime`, `stippled anime`, `stipple art`, or a transcript that is only `art`. Not `anime kamera`. The primary screen is captured and a left-button drag selects a rectangle. `web/anime_board.html` then shows that photo and holds. The heart and the colored dots start only after one thumb-to-middle snap, or when the whole transcript is `start`, `capture`, or `take screenshot`. A longer sentence that merely contains those words does not start it. The heart grows from the center to the edges over 10 seconds. A dot appears only when the heart reaches it. At 10 seconds the heart is gone and the color picture freezes. A new drag replaces the photo and holds again.
+5. **Canvas.** Only when the whole phrase is `canvas`, `draw`, or `drawing`.
+6. **YouTube.** `open youtube` opens the site. `play …` or `putar …` opens the first result.
+7. **Fog.** Only the exact phrase `fog mirror`.
+8. **Shutdown.** `shutdown`, `shut down`, `matikan`, or the `q` key.
 
-Proses yang sama juga bisa menghitung jari, membaca halaman, menyalakan filter kamera, Airbus, Desert Eagle, naga, dan kursor tangan.
+The same process can also count fingers, read a page, apply camera filters, and open Airbus, Desert Eagle, dragon, and a hand cursor.
 
-## Lisensi
+## License
 
-Kode yang ditulis untuk proyek ini: MIT. FBX Mixamo, model 3D, tekstur, bobot Vosk, suara Piper, dan bobot Whisper tetap di bawah lisensi masing-masing dan tidak diedarkan dari repo ini.
+Code written for this project is MIT. Mixamo FBX files, 3D models, textures, Vosk weights, the Piper voice, and Whisper weights stay under their own licenses and are not distributed from this repository.

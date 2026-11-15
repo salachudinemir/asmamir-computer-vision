@@ -37,6 +37,10 @@ The heart grows from the center for 10 seconds. The finished color picture then 
 
 `standby`, `stop anime`, and `stop stipple art` close the animation, the Anime camera, and the Edge page whose title contains `Anime stipple`, then return to the sit-up. The app keeps running.
 
+## YouTube finger cursor
+
+The whole phrase `open youtube` opens the site and arms the index-finger cursor immediately. It does not wait for a window title that already contains YouTube. The sit-up hologram window is hidden and left off screen so it does not go fullscreen every frame and hide the mouse. YouTube stays in front. The index finger moves the Windows cursor, a pinch clicks, and two fingers scroll. The Windows cursor is shown again after each frame. Closing YouTube brings the sit-up figure back. A voice arm (`mouse` or `kursor`) stays on after YouTube closes until `stop mouse` or `stop kursor`.
+
 ## Record snap and shutdown
 
 The whole phrase `record snap` or `records snap` saves `models/snaps/snap-N.wav` and `snap-N.mp4`. The folder is gitignored. There are five slots. When all five exist, the next recording overwrites from snap-1 and the log names the replaced number. The Anime camera stays up for the recording. This phrase is not sent to Hermes or Ollama.

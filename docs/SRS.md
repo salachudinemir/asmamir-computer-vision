@@ -51,7 +51,14 @@ This document records the behavior implemented in `app.py` and the modules it ca
 2. The Anime camera opens immediately and stays up until the wav and the clip are saved, or until a few seconds pass with no snap. The window thread keeps painting. The files are written between frames.
 3. Files are `models/snaps/snap-N.wav` and `snap-N.mp4`, gitignored, slots 1 through 5. When all five wavs exist, the next recording overwrites from snap-1 and the log names the number replaced.
 
-## 6. Quit
+## 6. YouTube finger cursor
+
+1. The whole phrase `open youtube` opens the site and arms the index-finger cursor immediately. Arming does not wait for a window title that already contains YouTube.
+2. The sit-up hologram window is hidden and left off the desktop. It is not returned to fullscreen on each frame, so it does not hide the mouse.
+3. YouTube stays in front. The index finger moves the Windows cursor. A pinch clicks. Two fingers scroll. The Windows cursor is shown again after each frame.
+4. Closing the YouTube window disarms that cursor and brings the sit-up figure back, unless the operator armed the cursor by voice (`mouse` or `kursor`) and has not said `stop mouse` or `stop kursor`.
+
+## 7. Quit
 
 From standby only, the whole phrase `shutdown`, `shut down`, `shutdown and quit`, `shut down and quit`, `quit`, `exit`, `goodbye`, or `good bye` exits the process and stops the companion processes in section 1.
 
@@ -59,7 +66,7 @@ From any other mode, including anime, dance, and asleep, the same phrase returns
 
 A longer sentence that merely contains those words does not quit.
 
-## 7. Login script
+## 8. Login script
 
 `scripts/start_login.cmd` is not registered by this repository.
 

@@ -3382,6 +3382,9 @@ def listen_for_command():
                     }.get(app, app or "that app")
                     if ok and label:
                         print(f"Open {app} ON")
+                        if app == "youtube":
+                            _load_pointer().expect_youtube()
+                            print("YouTube finger cursor on. Index moves it. Pinch clicks.")
                         speak(line(label))
                     else:
                         print(f"Open {app or app_guess}: missing")
@@ -5045,18 +5048,27 @@ def _foreground_hwnd(hwnd):
         print(f"Window focus: {exc}")
 
 
+def _standby_hwnd():
+    return _load_pointer()._overlay_hwnd()
+
+
 def _park_standby():
-    """Move the 3D window off the desktop so YouTube and the cursor stay visible."""
+    """Hide the 3D window so it cannot cover YouTube or swallow the mouse."""
     global _standby_parked
-    cv2.setWindowProperty(WINDOW, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
-    cv2.resizeWindow(WINDOW, 320, 180)
-    cv2.moveWindow(WINDOW, -32000, -32000)
+    hwnd = _standby_hwnd()
+    if hwnd:
+        import ctypes
+        ctypes.windll.user32.ShowWindow(hwnd, 0)
+    else:
+        cv2.setWindowProperty(WINDOW, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(WINDOW, 320, 180)
+        cv2.moveWindow(WINDOW, -32000, -32000)
     if _standby_parked:
         return
     _standby_parked = True
-    hwnd = _load_pointer().youtube_hwnd()
-    if hwnd:
-        _foreground_hwnd(hwnd)
+    target = _load_pointer().youtube_hwnd()
+    if target:
+        _foreground_hwnd(target)
     print("YouTube in front. Index moves the cursor. Pinch plays and pauses.")
 
 
@@ -5066,7 +5078,11 @@ def _restore_standby_window():
     if not _standby_parked:
         return
     _standby_parked = False
+    hwnd = _standby_hwnd()
     cv2.namedWindow(WINDOW, cv2.WINDOW_NORMAL)
+    if hwnd:
+        import ctypes
+        ctypes.windll.user32.ShowWindow(hwnd, 9)
     cv2.moveWindow(WINDOW, 0, 0)
     cv2.setWindowProperty(WINDOW, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
     _foreground(WINDOW)
@@ -5249,14 +5265,23 @@ while True:
             _close_fog_window()
         pointer = _load_pointer()
         pointer.watch_youtube_window()
+        youtube_cursor = pointer.armed() and pointer.youtube_showing()
+        if youtube_cursor and not _standby_parked:
+            _park_standby()
         if cap is None or not cap.isOpened():
-            _show_hologram()
+            if not youtube_cursor:
+                _show_hologram()
             cv2.waitKey(1)
+            if youtube_cursor:
+                pointer._show_os_cursor()
             opened = _open_best_camera()
             if opened is None:
                 print("Camera did not open. Hologram stays up. Orbit waits.")
-                _show_hologram()
+                if not youtube_cursor:
+                    _show_hologram()
                 _ui_key(cv2.waitKey(1) & 0xFF)
+                if youtube_cursor:
+                    pointer._show_os_cursor()
                 time.sleep(0.4)
                 continue
             cap, cam_index, cam_backend, cam_backend_name = opened
@@ -5264,7 +5289,6 @@ while True:
             miss_frames = 0
             print("Camera on to read orbit hands. The hologram stays on screen.")
         success, frame = cap.read()
-        youtube_cursor = pointer.armed() and pointer.youtube_showing()
         if success and frame is not None and frame.size != 0 and _has_picture(frame):
             if frame.ndim == 2:
                 frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
@@ -5286,13 +5310,14 @@ while True:
             if pointer.armed():
                 pointer.drive(frame, seen)
         if youtube_cursor:
-            _show_hologram()
+            if not _standby_parked:
+                _park_standby()
         else:
             _restore_standby_window()
             _show_hologram()
         _ui_key(cv2.waitKey(1) & 0xFF)
         if youtube_cursor:
-            _park_standby()
+            pointer._show_os_cursor()
         continue
     _exclusive("fog" if fog_active else "vision")
     if _standby_parked:

@@ -28,6 +28,7 @@ _overlay_style = None
 _cursor_forced = False
 _scan_at = 0.0
 _youtube_open = False
+_expect_until = 0.0
 
 _user32 = ctypes.windll.user32
 if ctypes.sizeof(ctypes.c_void_p) >= 8:
@@ -202,16 +203,31 @@ def youtube_window_open():
     return bool(youtube_hwnd())
 
 
+def expect_youtube():
+    """Voice just said open youtube. Arm the finger cursor before the tab title exists."""
+    global _expect_until, _youtube_open
+    if _suppressed:
+        return
+    _expect_until = time.monotonic() + 25.0
+    _youtube_open = True
+
+
 def watch_youtube_window(finder=None):
     """Arm while a YouTube window is visible. Close it and the cursor stops, unless voice armed it."""
-    global _scan_at, _armed, _youtube_open
+    global _scan_at, _armed, _youtube_open, _expect_until
     if _suppressed:
         _youtube_open = False
+        _expect_until = 0.0
         return False
     now = time.monotonic()
-    if now - _scan_at >= 0.8:
+    if now - _scan_at >= 0.4:
         _scan_at = now
-        _youtube_open = bool(youtube_window_open() if finder is None else finder())
+        seen = bool(youtube_window_open() if finder is None else finder())
+        if seen:
+            _youtube_open = True
+            _expect_until = 0.0
+        elif now >= _expect_until:
+            _youtube_open = False
     if _voice:
         if not _armed:
             _armed = True
@@ -250,6 +266,9 @@ def _show_os_cursor():
         if showing:
             return
         if _user32.ShowCursor(True) >= 0:
+            arrow = _user32.LoadCursorW(None, 32512)
+            if arrow:
+                _user32.SetCursor(arrow)
             return
 
 

@@ -58,6 +58,10 @@ Fill triggers:
 
 `record snap` and `records snap` are kept before chat, even if another grammar rewrites the open text. The camera window opens at once. Audio is captured on the listener. The wav and the mp4 are written on the window thread, one piece at a time, so the window keeps answering. Slots are `snap-1` through `snap-5`. A marker `models/snaps/next.txt` advances the overwrite after all five wavs exist. The log line is `Replaced snap-N.`
 
+## YouTube finger cursor
+
+`open youtube` calls `expect_youtube()` before the browser title exists, so the pointer is armed on that phrase. The standby loop then hides the sit-up window with `ShowWindow` and does not call the fullscreen hologram paint while that cursor is active. After `waitKey`, the Windows cursor is shown again. The index tip calls `SetCursorPos`. A pinch sends a left click. Two fingers send a wheel. When the scan no longer sees a visible YouTube title, and the short expect window has elapsed, the cursor disarms unless voice armed it, and the sit-up window is shown again.
+
 ## Quit and standby grammar
 
 Quit phrases are whole transcripts and exit only when standby is the only mode (sit-up visible, no vision mode, no anime page, no dance). Otherwise they return to standby.

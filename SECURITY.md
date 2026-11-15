@@ -12,7 +12,7 @@ Before wake, the webcam opens with no window so a thumb-to-middle snap can be re
 
 ## Screen capture and window control
 
-Anime mode captures the primary monitor through `mss` (GDI), then waits for a mouse drag. The code calls `user32` through ctypes for topmost windows, foreground, and the real cursor. The anime board opens Edge or Chrome fullscreen with a separate profile under `%LOCALAPPDATA%\asmamir\`.
+Anime mode captures the primary monitor through `mss` (GDI), then waits for a mouse drag. The code calls `user32` through ctypes for topmost windows, foreground, and the real cursor. The anime board opens Edge fullscreen when Edge is installed, otherwise the default browser, with a separate profile under `%LOCALAPPDATA%\asmamir\`. The window title contains `Anime stipple`.
 
 ## Autostart is not part of the repository
 

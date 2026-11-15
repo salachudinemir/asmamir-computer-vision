@@ -242,7 +242,7 @@ def line(key, **kwargs):
     return text.format(**kwargs) if kwargs else text
 
 ASSISTANT_NAME = "Asmamir"
-PRODUCT_NAME = "Asmamir Computer Vision"
+PRODUCT_NAME = "Asmamir Computer Vision AI Assistant"
 
 
 def _env_text(key):
@@ -671,7 +671,7 @@ stable_total = -1
 stable_hits = 0
 
 def profile_reply(command):
-    """Answers about Asmamir Computer Vision and the user. None if this is not a profile question."""
+    """Answers about Asmamir Computer Vision AI Assistant and the user. None if this is not a profile question."""
     words = set(command.split())
     if speech_language == "id":
         if "lengkap" in words and "nama" in words:
@@ -1062,6 +1062,7 @@ ANIME_PHRASES = json.dumps([
     "stop anime",
     "stop stipple",
     "stop stipple art",
+    "restart anime",
     "[unk]",
 ])
 # "close youtube" is heard as "close you tube".
@@ -1075,7 +1076,7 @@ CLOSE_PHRASES = json.dumps([
 # Own grammar, checked before color and YouTube. Exact phrase only.
 FOG_PHRASES = json.dumps(["fog mirror", "[unk]"])
 WAKE_PHRASES = json.dumps(["asmamir", "hey asmamir", "as mamir", "asma mir", "[unk]"])
-DANCE_PHRASES = json.dumps(["stop dance", "dance", "[unk]"])
+DANCE_PHRASES = json.dumps(["stop dance", "dance", "twerk", "rumba", "salsa", "[unk]"])
 # Tiny grammar: full phrases only. One-word draw/airbus is too easy for noise.
 MODE_PHRASES = json.dumps([
     "open canvas",
@@ -1129,6 +1130,20 @@ MODE_PHRASES = json.dumps([
     "lepas kursor",
     "[unk]",
 ])
+# Whole utterance only. A sentence that merely contains one of these words does not quit.
+QUIT_PHRASES = json.dumps([
+    "shutdown",
+    "shut down",
+    "shutdown and quit",
+    "shut down and quit",
+    "quit",
+    "exit",
+    "good bye",
+    "goodbye",
+    "[unk]",
+])
+RECORD_SNAP_PHRASES = json.dumps(["record snap", "records snap", "[unk]"])
+STIPPLE_ARM_PHRASES = json.dumps(["start", "capture", "start capture", "take screenshot", "[unk]"])
 
 def _register_phrase_grammar(label, grammar):
     """Build one small grammar at startup so a missing word is printed."""
@@ -1140,6 +1155,12 @@ def _register_phrase_grammar(label, grammar):
 _register_phrase_grammar("Canvas", CANVAS_PHRASES)
 _register_phrase_grammar("Anime", ANIME_PHRASES)
 _register_phrase_grammar("Close tab", CLOSE_PHRASES)
+_register_phrase_grammar("Quit", QUIT_PHRASES)
+_register_phrase_grammar("Record snap", RECORD_SNAP_PHRASES)
+_register_phrase_grammar("Stipple arm", STIPPLE_ARM_PHRASES)
+_register_phrase_grammar("Dance", DANCE_PHRASES)
+STANDBY_PHRASES = json.dumps(["standby", "stand by", "[unk]"])
+_register_phrase_grammar("Standby", STANDBY_PHRASES)
 
 def _vosk_text(audio, grammar):
     recognizer_vosk = KaldiRecognizer(vosk_model, 16000, grammar) if grammar else KaldiRecognizer(vosk_model, 16000)
@@ -1170,6 +1191,102 @@ def _vosk_phrase(audio, grammar):
 def _audio_too_short(audio, seconds=0.35):
     raw = audio.get_raw_data(convert_rate=16000, convert_width=2)
     return len(raw) < int(16000 * 2 * seconds)
+
+
+_SNAP_MATCH = 0.82
+_snap_templates = None
+
+
+def _burst_envelope(samples):
+    """30 ms around the peak, in 1 ms energy bins. Sample rate is 16 kHz."""
+    if samples.size < 160:
+        return None
+    center = int(np.argmax(np.abs(samples)))
+    half = 240
+    window = samples[max(0, center - half):center + half].astype(np.float32)
+    window = window - float(window.mean())
+    hop = 16
+    usable = (window.size // hop) * hop
+    if usable < hop:
+        return None
+    energy = np.abs(window[:usable]).reshape(-1, hop).mean(axis=1)
+    norm = float(np.linalg.norm(energy))
+    if norm < 1:
+        return None
+    return energy / norm
+
+
+def _snap_envelopes():
+    """snap-1.wav through snap-5.wav, converted to the same 16 kHz envelope."""
+    global _snap_templates
+    if _snap_templates is not None:
+        return _snap_templates
+    folder = Path(__file__).resolve().parent / "models" / "snaps"
+    found = []
+    if folder.is_dir():
+        import wave
+        for path in sorted(folder.glob("snap-*.wav")):
+            try:
+                with wave.open(str(path), "rb") as handle:
+                    raw = np.frombuffer(handle.readframes(handle.getnframes()), dtype=np.int16).astype(np.float32)
+                    rate = int(handle.getframerate())
+            except Exception:
+                continue
+            if rate != 16000 and raw.size > 1:
+                count = int(raw.size * 16000 / rate)
+                raw = np.interp(
+                    np.linspace(0, 1, count),
+                    np.linspace(0, 1, raw.size),
+                    raw,
+                ).astype(np.float32)
+            shape = _burst_envelope(raw)
+            if shape is not None:
+                found.append(shape)
+    _snap_templates = found
+    return found
+
+
+def _matches_saved_snap(audio):
+    """A short burst that matches a saved snap. Speech and a click stay below 0.82."""
+    raw = audio.get_raw_data(convert_rate=16000, convert_width=2)
+    heard = np.frombuffer(raw, dtype=np.int16).astype(np.float32)
+    if heard.size < 160:
+        return False
+    peak = float(np.max(np.abs(heard)))
+    if peak < 3500:
+        return False
+    loud = np.abs(heard) >= max(3000.0, peak / 3.0)
+    if float(np.count_nonzero(loud)) / 16000.0 > 0.25:
+        return False
+    shape = _burst_envelope(heard)
+    templates = _snap_envelopes()
+    if shape is None or not templates:
+        return False
+    best = 0.0
+    for template in templates:
+        width = min(shape.size, template.size)
+        score = abs(float(np.dot(shape[:width], template[:width])))
+        best = max(best, score)
+    if best >= _SNAP_MATCH:
+        print(f"Anime snap sound match {best:.2f}. Threshold {_SNAP_MATCH:.2f}.", flush=True)
+        return True
+    print(f"Anime snap sound rejected {best:.2f}. Needs >= {_SNAP_MATCH:.2f}.", flush=True)
+    return False
+
+
+def _audio_snap(audio):
+    """A finger snap on the listener mic: one short loud peak, not a sentence."""
+    raw = audio.get_raw_data(convert_rate=16000, convert_width=2)
+    samples = np.frombuffer(raw, dtype=np.int16)
+    if samples.size < 160:
+        return False
+    peak = int(np.max(np.abs(samples)))
+    if peak < 8000:
+        return False
+    loud = np.abs(samples) >= max(4000, peak // 3)
+    loud_seconds = float(np.count_nonzero(loud)) / 16000.0
+    span = samples.size / 16000.0
+    return span <= 1.2 and loud_seconds <= 0.4
 
 
 _clap_watch = None
@@ -1257,6 +1374,59 @@ def _whisper_text(samples, language):
     segments, _info = _indonesian_listener.transcribe(samples, language=language)
     return " ".join(segment.text for segment in segments).strip().lower()
 
+def _whole_phrase(command):
+    return " ".join((command or "").replace("-", " ").lower().split())
+
+
+_RECORD_EXACT = {"record snap", "records snap"}
+_DANCE_EXACT = {"twerk", "rumba", "salsa"}
+_STIPPLE_ARM = {"start", "capture", "start capture", "take screenshot"}
+
+
+_QUIT_EXACT = {
+    "shutdown",
+    "shut down",
+    "shutdown and quit",
+    "shut down and quit",
+    "quit",
+    "exit",
+    "good bye",
+    "goodbye",
+    "matikan",
+}
+
+
+def _kept_command(open_text, quit_hit="", record_hit="", dance_hit="", stipple_hit=""):
+    """Whole utterance only. A later grammar must not replace these phrases."""
+    whole = _whole_phrase(open_text)
+    record = _whole_phrase(record_hit)
+    # The record-snap grammar wins even when open text rewrites the same clip.
+    if record in _RECORD_EXACT or whole in _RECORD_EXACT:
+        print("Record snap kept")
+        return "record snap"
+    if whole in _QUIT_EXACT:
+        print(f"Shutdown phrase kept: {whole}")
+        return whole
+    if quit_hit in _QUIT_EXACT and whole in {"", quit_hit}:
+        print(f"Shutdown phrase kept: {quit_hit}")
+        return quit_hit
+    dance = _whole_phrase(dance_hit)
+    if whole in _DANCE_EXACT:
+        print(f"Dance kept: {whole}")
+        return whole
+    if dance in _DANCE_EXACT and whole in {"", dance}:
+        print(f"Dance kept: {dance}")
+        return dance
+    if whole in _STIPPLE_ARM:
+        print(f"Stipple arm kept: {whole}")
+        return whole
+    stipple = _whole_phrase(stipple_hit)
+    if stipple in _STIPPLE_ARM and whole in {"", stipple}:
+        print(f"Stipple arm kept: {stipple}")
+        return stipple
+    return ""
+
+
 def transcripts_from(audio):
     """Known phrases first. Stop is accepted only if open recognition agrees."""
     if speech_language == "id" and _indonesian_listener is not None:
@@ -1268,6 +1438,18 @@ def transcripts_from(audio):
         except Exception as exc:
             print(f"Indonesian listener error: {exc}")
             return []
+        texts = [text for text in (heard, english) if _whole_phrase(text)]
+        if texts and all(_whole_phrase(text) in _RECORD_EXACT for text in texts):
+            print("Record snap kept")
+            return ["record snap"]
+        if texts and all(_whole_phrase(text) in _QUIT_EXACT for text in texts):
+            phrase = _whole_phrase(texts[0])
+            print(f"Shutdown phrase kept: {phrase}")
+            return [phrase]
+        if texts and all(_whole_phrase(text) in _DANCE_EXACT for text in texts):
+            phrase = _whole_phrase(texts[0])
+            print(f"Dance kept: {phrase}")
+            return [phrase]
         canvas_exact = _canvas_exact(heard) or _canvas_exact(english)
         if canvas_exact:
             print(f"Canvas kept: {canvas_exact}")
@@ -1319,6 +1501,26 @@ def transcripts_from(audio):
         ):
             guesses.append(english)
         return guesses
+    open_first = _whole_phrase(_vosk_text(audio, None))
+    if _standby_only(open_first):
+        print(f"Standby phrase kept: {open_first}")
+        return [open_first]
+    kept = _kept_command(
+        _vosk_text(audio, None),
+        _vosk_phrase(audio, QUIT_PHRASES),
+        _vosk_phrase(audio, RECORD_SNAP_PHRASES),
+        _vosk_phrase(audio, DANCE_PHRASES),
+        _vosk_phrase(audio, STIPPLE_ARM_PHRASES),
+    )
+    if kept:
+        return [kept]
+    open_restart = _whole_phrase(_vosk_text(audio, None))
+    anime_phrase = _whole_phrase(_vosk_phrase(audio, ANIME_PHRASES))
+    if open_restart == "restart anime" or (
+        anime_phrase == "restart anime" and open_restart in {"", "restart anime"}
+    ):
+        print("Restart anime kept.")
+        return ["restart anime"]
     anime_hit = _vosk_phrase(audio, ANIME_PHRASES)
     anime_canon = _anime_exact(anime_hit)
     # Bare "art" is not in the forced grammar. A one-word guess must not
@@ -1465,10 +1667,6 @@ def transcripts_from(audio):
     )
     if airbus_hits:
         return airbus_hits
-    if mode_hit in {"shutdown", "shutdown and quit", "shut down and quit"}:
-        return [mode_hit]
-    if hinted in {"shutdown", "shutdown and quit", "shut down and quit"}:
-        return [hinted]
     if hinted in {"stop counting", "ignore my fingers", "ignore fingers"}:
         ignore_heard = hinted.startswith("ignore") and "ignore" in open_text and "finger" in open_text
         if hinted not in open_text and not ignore_heard:
@@ -2309,6 +2507,14 @@ def _anime_starts(canon):
     return True
 
 
+def _stipple_arm_phrase(command):
+    """The whole transcript is start, capture, start capture, or take screenshot."""
+    if not command:
+        return False
+    text = " ".join(command.replace("-", " ").lower().split())
+    return text in _STIPPLE_ARM
+
+
 def wants_anime(command):
     """Exact anime phrase only. A longer sentence does not start the mode."""
     return bool(_anime_exact(command))
@@ -2394,10 +2600,22 @@ def launch_named_app(command):
     """Start the desktop app or URL. Does not type or send. Does not change overlay mode."""
     return _load_open_apps().launch_from_command(command)
 
+def _standby_only(command):
+    """True when the utterance is only standby, or stand by, repeated. Nothing else."""
+    words = _whole_phrase(command).split()
+    if not words:
+        return False
+    if all(word == "standby" for word in words):
+        return True
+    return len(words) % 2 == 0 and all(
+        words[index] == "stand" and words[index + 1] == "by"
+        for index in range(0, len(words), 2)
+    )
+
+
 def wants_standby(command):
-    text = command.replace("-", " ").lower()
-    words = set(text.split())
-    return "standby" in words
+    """Whole transcript only. A longer sentence does not leave the current mode."""
+    return _standby_only(command)
 
 
 def wants_dance(command):
@@ -2405,6 +2623,14 @@ def wants_dance(command):
     if not command:
         return False
     return " ".join(command.replace("-", " ").lower().split()) == "dance"
+
+
+def wants_named_dance(command):
+    """Exact twerk, rumba, or salsa. A longer sentence is not that dance."""
+    whole = _whole_phrase(command)
+    if whole in _DANCE_EXACT:
+        return whole
+    return ""
 
 
 def wants_wake_name(command):
@@ -2446,24 +2672,18 @@ def wants_deagle_off(command):
     return "stop" in words or "berhenti" in words or "mati" in words or "off" in words
 
 def wants_shutdown(command):
-    """Quit app.py the same way q does. 'shut down' is the two words Vosk often hears."""
-    text = command.replace("-", " ").lower()
-    words = text.split()
-    if "shutdown" in words or "matikan" in words:
-        return True
-    if "shut" in words and "down" in words:
-        return True
-    return "quit" in words and ("shut" in words or "shutdown" in text)
+    """Quit only when the whole transcript is a shutdown phrase."""
+    return _whole_phrase(command) in _QUIT_EXACT
 
 _shutting_down = False
 
 
-def request_shutdown():
+def request_shutdown(voice=False):
     """Voice thread only raises the flag. The camera thread closes the window."""
     global shutdown_requested
     shutdown_requested = True
     cut_speech()
-    print("Shutdown")
+    print("Shutdown by voice" if voice else "Shutdown", flush=True)
     if threading.current_thread() is threading.main_thread():
         finish_shutdown()
 
@@ -2500,16 +2720,70 @@ def finish_shutdown():
             stop()
         except Exception as exc:
             print(f"Shutdown servers: {exc}")
+    for closer, label in (
+        (_close_p5_board, "anime"),
+        (_close_dance_window, "dance"),
+        (_close_fog_window, "fog"),
+        (_close_select, "select"),
+    ):
+        try:
+            closer()
+        except Exception as exc:
+            print(f"Shutdown {label}: {exc}")
+    titles = (
+        globals().get("WINDOW"),
+        globals().get("DANCE_WINDOW"),
+        globals().get("FOG_WINDOW"),
+        globals().get("SELECT_WINDOW"),
+        globals().get("ANIME_CAM"),
+        "Anime stipple",
+    )
     try:
-        _close_p5_board()
-    except Exception as exc:
-        print(f"Shutdown anime board: {exc}")
-    try:
-        cv2.destroyAllWindows()
+        import ctypes
+        user32 = ctypes.windll.user32
+        for title in titles:
+            if not title:
+                continue
+            hwnd = user32.FindWindowW(None, title)
+            if hwnd:
+                user32.PostMessageW(hwnd, 0x0010, 0, 0)
     except Exception:
         pass
+    try:
+        cv2.destroyAllWindows()
+        cv2.waitKey(1)
+    except Exception:
+        pass
+    _stop_chat_companions()
     # sys.exit runs GC, and ufbx's destructor access-violates after skinning.
     os._exit(0)
+
+def _stop_chat_companions():
+    """Ollama, Hermes, and the Deepseek harness run only while this app does."""
+    if getattr(_stop_chat_companions, "done", False):
+        return
+    _stop_chat_companions.done = True
+    print("Stopping Ollama, Hermes, and the Deepseek harness.", flush=True)
+    subprocess.run(
+        [
+            "powershell", "-NoProfile", "-Command",
+            "$ids = @(); "
+            "foreach ($port in 11434,8642,3080) { "
+            "Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | "
+            "ForEach-Object { $ids += $_.OwningProcess } }; "
+            "Get-CimInstance Win32_Process | Where-Object { "
+            "$c = [string]$_.CommandLine; "
+            "($_.Name -eq 'ollama.exe' -and ($c -match 'serve' -or $c -match 'launch\\s+dsh')) -or "
+            "($c -match 'Hermes_Gateway' -or ($c -match 'hermes' -and $c -match 'gateway')) "
+            "} | ForEach-Object { $ids += $_.ProcessId }; "
+            "$ids | Select-Object -Unique | Where-Object { $_ -gt 0 } | "
+            "ForEach-Object { taskkill /F /T /PID $_ | Out-Null }",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=20,
+    )
+
 
 def wants_quiet(command):
     """Cut the current speech and return to listening. Does not stop finger counting."""
@@ -2588,7 +2862,7 @@ def request_hologram():
     print("Hologram.")
 
 
-def request_dance():
+def request_dance(name=""):
     """Close every other mode window. The window thread opens the dance window."""
     global vision_busy, _standby_visible
     set_session_mode(None)
@@ -2597,7 +2871,10 @@ def request_dance():
     _standby_visible = True
     _drop_latest_frame()
     from web import hologram_dance
-    hologram_dance.cycle()
+    if name:
+        hologram_dance.play(name)
+    else:
+        hologram_dance.cycle()
     print("Dance window.")
 
 
@@ -2622,7 +2899,11 @@ def _close_kind(command):
 
 
 def request_camera_screen():
-    """Stop, standby, and close-tab return to the hologram. The webcam is released."""
+    """Ask the window thread to close the stipple page and sit up. Voice must not touch OpenCV."""
+    global anime_pending, _recording_snap, _snap_save, _need_ui_standby
+    anime_pending = None
+    _recording_snap = False
+    _need_ui_standby = True
     request_hologram()
 
 
@@ -2646,6 +2927,290 @@ def _return_camera_voice(guesses, interrupt=False):
     request_camera_screen()
     speak(line("tab_closed" if ok else "tab_missing", name=shown))
     return True
+
+_recording_snap = False
+_motion_frames = []
+_snap_reason = "camera snap"
+
+
+def _snap_folder():
+    folder = Path(__file__).resolve().parent / "models" / "snaps"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def _snap_sample_path():
+    """First missing wav. When snap-1 through snap-5 already exist, replace from snap-1."""
+    folder = _snap_folder()
+    for number in range(1, 6):
+        wav = folder / f"snap-{number}.wav"
+        if not wav.is_file() or wav.stat().st_size == 0:
+            return wav, False
+    marker = folder / "next.txt"
+    number = 1
+    if marker.is_file():
+        try:
+            number = int(marker.read_text(encoding="utf-8").strip() or "1")
+        except ValueError:
+            number = 1
+    number = min(5, max(1, number))
+    return folder / f"snap-{number}.wav", True
+
+
+def _advance_replaced_slot(number):
+    nxt = 1 if number >= 5 else number + 1
+    (_snap_folder() / "next.txt").write_text(str(nxt), encoding="utf-8")
+
+
+def _keep_record_frame(frame):
+    if frame is None or getattr(frame, "size", 0) == 0:
+        return
+    _motion_frames.append(frame.copy())
+    if len(_motion_frames) > 14:
+        del _motion_frames[:-14]
+
+
+_snap_save = None
+_snap_close = False
+
+
+def _capture_record_frame():
+    """One camera frame and a window pump. No file write and no hand model on this path."""
+    global cap, cam_index, cam_backend, cam_backend_name, last_good, miss_frames
+    if _p5_armed:
+        return
+    if cap is None or not cap.isOpened():
+        opened = _open_best_camera()
+        if opened is None:
+            return
+        cap, cam_index, cam_backend, cam_backend_name = opened
+        last_good = None
+        miss_frames = 0
+    ok, frame = cap.read()
+    if not ok or frame is None or getattr(frame, "size", 0) == 0:
+        cv2.waitKey(1)
+        return
+    if frame.ndim == 2:
+        frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+    frame = cv2.flip(frame, 1)
+    _show_anime_camera(frame)
+    _keep_record_frame(frame)
+
+
+def _finish_snap_save():
+    """Close the writer, log the slot, and drop the Anime camera."""
+    global _snap_save
+    job = _snap_save
+    _snap_save = None
+    writer = job.get("writer")
+    if writer is not None:
+        writer.release()
+    video = job["video"]
+    if job.get("wrote"):
+        print(f"Saved {video}.", flush=True)
+    elif not job.get("frames"):
+        print(f"No camera frames for {video}.", flush=True)
+    number = job["number"]
+    if number < 5:
+        print(f"Say record snap, then snap once, for snap-{number + 1}.mp4.", flush=True)
+    else:
+        print("Say record snap, then snap once, to replace snap-1.", flush=True)
+    if not (_p5_open and not _p5_armed):
+        _hide_anime_camera()
+
+
+def _pump_snap_save():
+    """Write the wav once, then one video frame, and keep the window answering."""
+    global _snap_save
+    import wave
+
+    job = _snap_save
+    if job is None:
+        return
+    frames = job["frames"]
+    shown = frames[-1] if frames else None
+    if shown is not None:
+        _show_anime_camera(shown)
+    if not job["wav_done"]:
+        path = job["path"]
+        with wave.open(str(path), "wb") as handle:
+            handle.setnchannels(1)
+            handle.setsampwidth(job["width"])
+            handle.setframerate(job["rate"])
+            handle.writeframes(job["raw"])
+        job["wav_done"] = True
+        if job["replacing"]:
+            print(f"Replaced snap-{job['number']}.", flush=True)
+            _advance_replaced_slot(job["number"])
+        print(f"Saved {path}. Peak {job['peak']} ({job['peak'] / 32767:.2f}).", flush=True)
+        return
+    if not frames:
+        _finish_snap_save()
+        return
+    writer = job.get("writer")
+    if writer is None:
+        height, width = frames[0].shape[:2]
+        job["size"] = (width, height)
+        writer = cv2.VideoWriter(str(job["video"]), cv2.VideoWriter_fourcc(*"mp4v"), 10, (width, height))
+        job["writer"] = writer
+        if not writer.isOpened():
+            for index, frame in enumerate(frames, start=1):
+                cv2.imwrite(str(job["path"].with_name(f"{job['path'].stem}-{index:02d}.jpg")), frame)
+            job["wrote"] = False
+            print(f"Saved frames next to {job['path'].name}.", flush=True)
+            _finish_snap_save()
+            return
+    index = job["index"]
+    if index >= len(frames):
+        job["wrote"] = True
+        _finish_snap_save()
+        return
+    frame = frames[index]
+    width, height = job["size"]
+    if frame.shape[1] != width or frame.shape[0] != height:
+        frame = cv2.resize(frame, (width, height))
+    writer.write(frame)
+    job["index"] = index + 1
+
+
+def _record_next_snap(source):
+    """Wait for the snap on the mic. The window thread writes the wav and the mp4."""
+    global _recording_snap, _motion_frames, _snap_save, _snap_close
+
+    path, replacing = _snap_sample_path()
+    video = path.with_suffix(".mp4")
+    rate = int(source.SAMPLE_RATE)
+    width = int(source.SAMPLE_WIDTH)
+    chunk = int(source.CHUNK)
+    seconds = 0.7
+    need = int(rate * seconds) * width
+    pre_keep = int(rate * 0.15) * width
+    _motion_frames = []
+    _recording_snap = True
+    print(f"Snap once. Wav {path}. Video {video}.", flush=True)
+    try:
+        def read_block():
+            return source.stream.read(chunk)
+
+        ambient = 0
+        heard = []
+        started = time.time()
+        while time.time() - started < 0.25:
+            block = read_block()
+            samples = np.frombuffer(block, dtype=np.int16)
+            if samples.size:
+                ambient = max(ambient, int(np.max(np.abs(samples))))
+            heard.append(block)
+        threshold = max(6000, ambient * 6)
+        pre = [b"".join(heard)[-pre_keep:]]
+        previous = ambient
+        triggered = False
+        pieces = []
+        total = 0
+        deadline = time.time() + 6.0
+        while total < need:
+            if not triggered and time.time() >= deadline:
+                break
+            block = read_block()
+            samples = np.frombuffer(block, dtype=np.int16)
+            level = int(np.max(np.abs(samples))) if samples.size else 0
+            if not triggered:
+                pre.append(block)
+                raw_pre = b"".join(pre)
+                if len(raw_pre) > pre_keep:
+                    pre = [raw_pre[-pre_keep:]]
+                if level >= threshold and level > previous * 2:
+                    triggered = True
+                    pieces = [b"".join(pre)]
+                    total = len(pieces[0])
+                previous = level
+                continue
+            pieces.append(block)
+            total += len(block)
+        if not triggered:
+            print("No snap arrived. Say record snap and snap again.", flush=True)
+            return
+        raw = b"".join(pieces)[:need]
+        audio = np.frombuffer(raw, dtype=np.int16)
+        peak = int(np.max(np.abs(audio))) if audio.size else 0
+        _snap_save = {
+            "path": path,
+            "video": video,
+            "raw": raw,
+            "rate": rate,
+            "width": width,
+            "peak": peak,
+            "replacing": replacing,
+            "number": int(path.stem.split("-")[1]),
+            "frames": list(_motion_frames),
+            "index": 0,
+            "wav_done": False,
+            "writer": None,
+            "wrote": False,
+        }
+    finally:
+        _recording_snap = False
+        if _snap_save is None:
+            _snap_close = True
+
+
+def _on_standby():
+    """Sit-up hologram only. Anime, dance, fog, canvas, and the other modes are not this."""
+    if not _standby_visible or _vision_modes_on() or _p5_open:
+        return False
+    try:
+        from web import hologram_dance
+        if hologram_dance.active():
+            return False
+    except Exception:
+        return False
+    return True
+
+
+def _take_voice_quit(guesses):
+    """Quit only from standby. Anywhere else, the same phrase returns to the sit-up."""
+    if not any(wants_shutdown(guess) for guess in guesses):
+        return False
+    if _on_standby():
+        request_shutdown(voice=True)
+        return True
+    print("Shutdown phrase returns to standby.", flush=True)
+    request_camera_screen()
+    speak("ok, back to standby mode")
+    return True
+
+
+def _take_restart_anime(guesses):
+    """Whole transcript only. Close the held picture and open selection again."""
+    global _restart_anime
+    if not any(_whole_phrase(guess) == "restart anime" for guess in guesses):
+        return False
+    _restart_anime = True
+    print("Restart anime.", flush=True)
+    return True
+
+
+def _take_leave_to_standby(guesses):
+    """Standby, repeated, or stop anime / stop stipple art. The app keeps running."""
+    leave = {"stop anime", "stop stipple art"}
+    if not any(_standby_only(guess) or _whole_phrase(guess) in leave for guess in guesses):
+        return False
+    print("Standby phrase closes anime.", flush=True)
+    request_camera_screen()
+    speak("ok, back to standby mode")
+    return True
+
+
+def _take_record_snap(guesses, source):
+    if not any(_whole_phrase(guess) in _RECORD_EXACT for guess in guesses):
+        return False
+    print("Record snap armed", flush=True)
+    try:
+        _record_next_snap(source)
+    except Exception as exc:
+        print(f"Snap recording failed: {exc}", flush=True)
+    return True
+
 
 def listen_for_command():
     """Listen continuously for English commands and profile questions."""
@@ -2673,6 +3238,14 @@ def listen_for_command():
                     except sr.WaitTimeoutError:
                         continue
                     guesses = transcripts_from(heard)
+                    if _take_voice_quit(guesses):
+                        continue
+                    if _take_record_snap(guesses, source):
+                        continue
+                    if _take_restart_anime(guesses):
+                        continue
+                    if _take_leave_to_standby(guesses):
+                        continue
                     if _return_camera_voice(guesses, interrupt=True):
                         print("Heard: " + " | ".join(guesses))
                         continue
@@ -2684,26 +3257,50 @@ def listen_for_command():
                 if speaking or time.time() < quiet_after:
                     print("Ignored speaker playback.")
                     continue
-                if _audio_too_short(audio):
-                    print("Heard a short burst, ignored.")
-                    continue
                 guesses = transcripts_from(audio)
+                if _take_voice_quit(guesses):
+                    continue
+                if _take_record_snap(guesses, source):
+                    continue
+                if _take_restart_anime(guesses):
+                    continue
+                if _take_leave_to_standby(guesses):
+                    continue
+                if _p5_open and not _p5_armed and any(_stipple_arm_phrase(guess) for guess in guesses):
+                    print("Heard: " + " | ".join(guesses))
+                    _arm_stipple("voice")
+                    continue
+                if _p5_open and not _p5_armed and _matches_saved_snap(audio):
+                    _arm_stipple("sound match")
+                    continue
                 if not guesses:
                     print("Heard audio, but the words were not clear.")
                     continue
+                if _audio_too_short(audio):
+                    print("Heard a short burst, ignored.")
+                    continue
                 print("Heard: " + " | ".join(guesses))
+                if _take_voice_quit(guesses):
+                    continue
+                if _take_record_snap(guesses, source):
+                    continue
+                if _take_restart_anime(guesses):
+                    continue
+                if _take_leave_to_standby(guesses):
+                    continue
                 if any(wants_wake_name(guess) for guess in guesses):
                     print("Voice asmamir. Standby.")
                     request_camera_screen()
                     speak(line("wake"))
                     continue
                 if not _standby_visible:
-                    if any(wants_shutdown(guess) for guess in guesses):
-                        request_shutdown()
-                        continue
                     print("Quiet. Snap thumb to middle, or say asmamir.")
                     continue
                 if _return_camera_voice(guesses):
+                    continue
+                named_dance = next((wants_named_dance(guess) for guess in guesses if wants_named_dance(guess)), "")
+                if named_dance:
+                    request_dance(named_dance)
                     continue
                 if any(wants_dance(guess) for guess in guesses):
                     request_dance()
@@ -2883,8 +3480,8 @@ def listen_for_command():
                     set_session_mode("dragon")
                     print("Dragon ON")
                     speak(line("dragon_on"))
-                elif any(wants_shutdown(guess) for guess in guesses):
-                    request_shutdown()
+                elif _take_voice_quit(guesses):
+                    pass
                 elif any(wants_quiet(guess) for guess in guesses):
                     cut_speech()
                 elif any(wants_stop(guess) for guess in guesses) or any(
@@ -2908,9 +3505,15 @@ def listen_for_command():
                         print(f"Math: {calculated}")
                         speak(calculated)
                     else:
-                        reply = ask_language_model(guesses[0])
-                        if reply and not heard_herself(reply):
-                            speak(reply)
+                        asked = guesses[0]
+                        def _answer_later(text=asked):
+                            try:
+                                reply = ask_language_model(text)
+                                if reply and not heard_herself(reply):
+                                    speak(reply)
+                            except Exception as exc:
+                                print(f"Open question failed: {exc}", flush=True)
+                        threading.Thread(target=_answer_later, daemon=True).start()
             except sr.WaitTimeoutError:
                 continue
             except sr.UnknownValueError:
@@ -2918,6 +3521,13 @@ def listen_for_command():
             except sr.RequestError as exc:
                 print(f"Speech-to-text needs internet: {exc}")
                 time.sleep(1)
+            except Exception as exc:
+                text = str(exc)
+                if "-9988" in text or "-9999" in text or "Stream closed" in text:
+                    print("Microphone stream closed. Opening it again.", flush=True)
+                    raise
+                print(f"Voice listener error: {exc}", flush=True)
+                time.sleep(0.2)
 
 # Jalankan pendengar suara di thread terpisah agar tidak mengganggu kamera
 _standby_visible = False
@@ -2995,7 +3605,12 @@ WINDOW = PRODUCT_NAME
 FOG_WINDOW = "Fog mirror"
 ANIME_BOARD = "Anime board"
 SELECT_WINDOW = "Anime select"
+ANIME_CAM = "Anime camera"
 DANCE_WINDOW = "Dance"
+_anime_cam_open = False
+_anime_cam_hold = False
+_need_ui_standby = False
+_restart_anime = False
 _fog_window_open = False
 _standby_parked = False
 _standby_window = False
@@ -3008,8 +3623,11 @@ _p5_httpd = None
 _p5_port = None
 _p5_proc = None
 _p5_open = False
+_p5_armed = False
 _p5_crop = None
 _p5_filled = False
+_mouse_was_down = False
+_reselect_drag = False
 _select_open = False
 _select_shot = None
 _select_origin = (0, 0, 0, 0)
@@ -3435,6 +4053,8 @@ class _AnimeBoardHandler(BaseHTTPRequestHandler):
             self._send(root / "p5.min.js", "text/javascript; charset=utf-8")
         elif path == "/crop.png":
             self._send(_p5_crop, "image/png", nostore=True)
+        elif path == "/arm":
+            self._bytes(b"go" if _p5_armed else b"hold", "text/plain", nostore=True)
         elif path == "/filled":
             _note_p5_filled()
             self._bytes(b"ok", "text/plain")
@@ -3484,17 +4104,32 @@ def _ensure_p5_server():
     return None
 
 
+def _arm_stipple(reason):
+    """Start the heart. A snap or an exact voice phrase sets this. Dance does not."""
+    global _p5_armed, _anime_cam_hold
+    if not _p5_open or _p5_armed:
+        return
+    _p5_armed = True
+    _anime_cam_hold = True
+    print(f"Anime stipple started by {reason}.", flush=True)
+
+
 def _open_p5_board(crop):
-    """Full-screen p5 page for this crop. Voice anime already chose this mode."""
-    global _p5_open, _p5_proc, _p5_crop, _p5_filled
+    """Full-screen still of this crop. The heart waits for a snap or voice."""
+    global _p5_open, _p5_proc, _p5_crop, _p5_filled, _p5_armed, _preview_cam_logged
+    _preview_cam_logged = False
     folder = Path(os.environ.get("LOCALAPPDATA", "")) / "asmamir"
     folder.mkdir(parents=True, exist_ok=True)
     crop_path = folder / "anime-crop.png"
     if not cv2.imwrite(str(crop_path), crop):
         print("Anime board: could not save the crop.")
         return False
+    if _p5_open or _p5_proc is not None:
+        _close_p5_board()
     _p5_crop = crop_path
     _p5_filled = False
+    _p5_armed = False
+    _anime_cam_hold = False
     port = _ensure_p5_server()
     browser = _browser_exe()
     if port is None or browser is None:
@@ -3525,15 +4160,63 @@ def _open_p5_board(crop):
         ]
     _p5_proc = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     _p5_open = True
-    print("Anime board full screen.")
+    from web import hologram_dance
+    hologram_dance.reset_preview_snap()
+    print("Anime preview holding. Snap, or say start, capture, start capture, or take screenshot.")
     return True
 
 
+def _close_stipple_browser():
+    """Close every Edge window whose title contains Anime stipple, and that profile."""
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    found = []
+
+    def visit(hwnd, _lparam):
+        length = user32.GetWindowTextLengthW(hwnd)
+        if length <= 0:
+            return True
+        buf = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, buf, length + 1)
+        if "Anime stipple" not in buf.value:
+            return True
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        user32.PostMessageW(hwnd, 0x0010, 0, 0)
+        if pid.value:
+            found.append(int(pid.value))
+        return True
+
+    proto = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    user32.EnumWindows(proto(visit), 0)
+    for pid in sorted(set(found)):
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(pid)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    subprocess.run(
+        [
+            "powershell", "-NoProfile", "-Command",
+            "Get-CimInstance Win32_Process | "
+            "Where-Object { $_.Name -match 'msedge|chrome' -and $_.CommandLine -like '*anime-p5-profile*' } | "
+            "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=15,
+    )
+    return bool(found)
+
+
 def _close_p5_board():
-    """Stop the stipple page. Standby is shown by the caller."""
-    global _p5_open, _p5_proc
-    if not _p5_open and _p5_proc is None:
-        return
+    """Stop the stipple page, including an Edge window left after the handle is gone."""
+    global _p5_open, _p5_proc, _p5_armed
+    _hide_anime_camera()
+    had_board = _p5_open or _p5_proc is not None
+    _p5_armed = False
     _p5_open = False
     proc = _p5_proc
     _p5_proc = None
@@ -3543,18 +4226,11 @@ def _close_p5_board():
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-    subprocess.run(
-        [
-            "powershell", "-NoProfile", "-Command",
-            "Get-CimInstance Win32_Process | "
-            "Where-Object { $_.CommandLine -like '*anime-p5-profile*' } | "
-            "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        timeout=15,
-    )
-    print("Anime board closed.")
+        had_board = True
+    if _close_stipple_browser():
+        had_board = True
+    if had_board:
+        print("Anime board closed.")
 
 
 def _show_anime_board(image):
@@ -3674,6 +4350,8 @@ def _select_mouse(event, x, y, _flags, _param):
     x = max(0, min(width - 1, int(x)))
     y = max(0, min(height - 1, int(y)))
     if event == cv2.EVENT_LBUTTONDOWN:
+        if _reselect_drag and _drag_anchor is not None:
+            return
         _drag_anchor = (x, y)
         _drag_point = (x, y)
         _drag_rect = None
@@ -3694,6 +4372,67 @@ def _select_mouse(event, x, y, _flags, _param):
         bottom = max(top + 1, min(shot_h, int(round(bottom * scale_y))))
         if right - left >= 16 and bottom - top >= 16:
             _drag_rect = (left, top, right - left, bottom - top)
+
+
+def _left_down():
+    import ctypes
+    return bool(ctypes.windll.user32.GetAsyncKeyState(0x01) & 0x8000)
+
+
+def _note_mouse():
+    """True on the frame the left button goes down."""
+    global _mouse_was_down
+    down = _left_down()
+    edge = down and not _mouse_was_down
+    _mouse_was_down = down
+    return edge
+
+
+def _cursor_xy():
+    import ctypes
+    from ctypes import wintypes
+    point = wintypes.POINT()
+    user32 = ctypes.windll.user32
+    user32.GetCursorPos(ctypes.byref(point))
+    hwnd = _named_hwnd(SELECT_WINDOW)
+    if hwnd:
+        user32.ScreenToClient(ctypes.c_void_p(hwnd), ctypes.byref(point))
+    width, height = _screen_pixels()
+    return max(0, min(width - 1, int(point.x))), max(0, min(height - 1, int(point.y)))
+
+
+def _start_reselect():
+    """A new drag while the board is up. The next picture waits again."""
+    global _select_shot, _select_origin, _drag_anchor, _drag_point, _drag_rect, _reselect_drag
+    import ctypes
+    from ctypes import wintypes
+    point = wintypes.POINT()
+    user32 = ctypes.windll.user32
+    user32.GetCursorPos(ctypes.byref(point))
+    saved_x, saved_y = int(point.x), int(point.y)
+    _show_named("Anime stipple", False)
+    cv2.waitKey(1)
+    shot, origin = _grab_desktop()
+    if shot is None:
+        _show_named("Anime stipple", True)
+        print("Anime: the new grab failed. The picture stays.")
+        return
+    _select_shot = shot
+    _select_origin = origin
+    _drag_rect = None
+    _reselect_drag = True
+    _open_select()
+    _pin_select_window()
+    point.x, point.y = saved_x, saved_y
+    hwnd = _named_hwnd(SELECT_WINDOW)
+    if hwnd:
+        user32.ScreenToClient(ctypes.c_void_p(hwnd), ctypes.byref(point))
+    width, height = _screen_pixels()
+    x = max(0, min(width - 1, int(point.x)))
+    y = max(0, min(height - 1, int(point.y)))
+    _drag_anchor = (x, y)
+    _drag_point = (x, y)
+    print("Anime: drag a new rectangle.")
 
 
 def _grab_desktop():
@@ -3763,28 +4502,111 @@ def _pin_select_window():
         print(f"Anime select on top. {width}x{height}")
 
 
+def _show_anime_camera(frame):
+    """Visible while recording a snap, or while a selected still is waiting."""
+    global _anime_cam_open
+    if _p5_armed or _anime_cam_hold:
+        _hide_anime_camera(force=True)
+        return
+    if not _anime_cam_open:
+        cv2.namedWindow(ANIME_CAM, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(ANIME_CAM, int(frame.shape[1]), int(frame.shape[0]))
+        cv2.moveWindow(ANIME_CAM, 24, 24)
+        _anime_cam_open = True
+        if _recording_snap:
+            print("Anime camera on for record snap.", flush=True)
+        else:
+            print("Anime camera on. The still is waiting.", flush=True)
+    cv2.imshow(ANIME_CAM, frame)
+    try:
+        cv2.setWindowProperty(ANIME_CAM, cv2.WND_PROP_TOPMOST, 1)
+    except Exception:
+        pass
+    cv2.waitKey(1)
+
+
+def _hide_anime_camera(force=False):
+    """Drop the snap camera. Call this from the window thread only."""
+    global _anime_cam_open
+    if not force and not _anime_cam_open and not _p5_armed and not _anime_cam_hold:
+        return
+    if _recording_snap and not _p5_armed and not _anime_cam_hold and not force:
+        return
+    was = _anime_cam_open
+    _anime_cam_open = False
+    try:
+        cv2.destroyWindow(ANIME_CAM)
+    except Exception:
+        pass
+    try:
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        found = []
+
+        def visit(hwnd, _lparam):
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length <= 0:
+                return True
+            buf = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(hwnd, buf, length + 1)
+            title = buf.value
+            if title != ANIME_CAM and not title.startswith("Anime camera"):
+                return True
+            found.append(hwnd)
+            user32.ShowWindow(hwnd, 0)
+            user32.PostMessageW(hwnd, 0x0010, 0, 0)
+            return True
+
+        proto = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        user32.EnumWindows(proto(visit), 0)
+        was = was or bool(found)
+    except Exception:
+        pass
+    cv2.waitKey(1)
+    if was:
+        print("Anime camera off.", flush=True)
+
+
 def _present_anime():
-    """Show the screen, then stipple the rectangle the left button drags."""
-    global anime_pending
-    if cap is not None:
-        _release_camera()
+    """Show the screen, then hold the dragged photo until a snap or voice."""
+    global anime_pending, _reselect_drag, _select_warned, _select_shot, _select_origin
+    if _p5_armed:
+        _hide_anime_camera()
+        _ui_key(cv2.waitKey(1) & 0xFF)
+        return
+    edge = _note_mouse()
+    if _p5_open and _select_shot is None and edge:
+        _start_reselect()
+    if _reselect_drag and _select_open and _drag_anchor is not None and not _left_down():
+        x, y = _cursor_xy()
+        _select_mouse(cv2.EVENT_LBUTTONUP, x, y, 0, None)
+        _reselect_drag = False
+    if anime_pending:
+        anime_pending = None
+        _load_anime_mod().reset()
+        _close_select()
+        _close_p5_board()
+        _reselect_drag = False
+        _select_warned = False
+        print("Anime: drag a rectangle.")
+    if _p5_open and _select_shot is None:
+        if not _p5_armed:
+            try:
+                if _watch_wake_snap(preview=True):
+                    _arm_stipple(_snap_reason)
+            except Exception as exc:
+                print(f"Snap watch stayed up: {exc}")
+                time.sleep(0.05)
+        if _p5_armed:
+            _hide_anime_camera()
+        _ui_key(cv2.waitKey(1) & 0xFF)
+        return
+    _hide_anime_camera()
+    _drain_camera()
     _park_for_anime()
     if _capture_frame is not None and _capture_frame.visible:
         _capture_frame.hide()
-    module = _load_anime_mod()
-    global _select_warned
-    if anime_pending:
-        anime_pending = None
-        module.reset()
-        _close_select()
-        _close_p5_board()
-        _select_warned = False
-        print("Anime: drag a rectangle.")
-    if _p5_open:
-        _close_select()
-        _ui_key(cv2.waitKey(1) & 0xFF)
-        return
-    global _select_shot, _select_origin
     if _select_shot is None:
         shot, origin = _grab_desktop()
         if shot is None:
@@ -3804,10 +4626,15 @@ def _present_anime():
     if _drag_rect is not None and _select_shot is not None:
         x, y, width, height = _drag_rect
         crop = np.ascontiguousarray(_select_shot[y:y + height, x:x + width])
+        was_reselect = _reselect_drag
+        _reselect_drag = False
         _close_select()
         if crop.size == 0 or not _crop_has_ink(crop):
             print("Anime: that rectangle had no picture.")
-            speak(line("no_picture"))
+            if was_reselect and (_p5_proc is not None):
+                _show_named("Anime stipple", True)
+            else:
+                speak(line("no_picture"))
         else:
             print(f"Anime drag {width}x{height} at {x},{y}")
             _open_p5_board(crop)
@@ -4001,6 +4828,16 @@ _hologram_tick = 0
 
 print("\n[Asmamir] Quiet. No window until a thumb-to-middle snap or the word asmamir. Chat: Hermes 127.0.0.1:8642, then Ollama 127.0.0.1:11434.")
 
+def _drain_camera():
+    """One hidden read while the anime overlay is up, so the open camera stays live."""
+    if cap is None or not cap.isOpened():
+        return
+    try:
+        cap.read()
+    except Exception:
+        pass
+
+
 def _release_camera():
     """Drop the webcam. The hologram does not keep a capture open."""
     global cap, last_good, miss_frames
@@ -4080,7 +4917,7 @@ def _show_hologram():
     _ensure_standby_window()
     hologram_mesh.warm()
     _hologram_tick += 1
-    plate = hologram_cv.render(1280, 720, _hologram_tick)
+    plate = hologram_cv.render(*_screen_pixels(), _hologram_tick)
     cv2.imshow(WINDOW, plate)
 
 
@@ -4166,7 +5003,7 @@ def _present_dance():
         if opened is None:
             hologram_mesh.warm()
             _hologram_tick += 1
-            cv2.imshow(DANCE_WINDOW, hologram_cv.render(1280, 720, _hologram_tick))
+            cv2.imshow(DANCE_WINDOW, hologram_cv.render(*_screen_pixels(), _hologram_tick))
             _ui_key(cv2.waitKey(1) & 0xFF)
             time.sleep(0.05)
             return
@@ -4192,7 +5029,7 @@ def _present_dance():
             hologram_dance.cycle()
     hologram_mesh.warm()
     _hologram_tick += 1
-    cv2.imshow(DANCE_WINDOW, hologram_cv.render(1280, 720, _hologram_tick))
+    cv2.imshow(DANCE_WINDOW, hologram_cv.render(*_screen_pixels(), _hologram_tick))
     _ui_key(cv2.waitKey(1) & 0xFF)
 
 
@@ -4237,11 +5074,15 @@ def _restore_standby_window():
 
 
 _snap_cam_warned = False
+_preview_cam_logged = False
 
 
-def _watch_wake_snap():
-    """Hidden camera. One thumb-to-middle snap wakes her. A clap does not."""
-    global cap, cam_index, cam_backend, cam_backend_name, last_good, miss_frames, _snap_cam_warned
+def _watch_wake_snap(preview=False):
+    """Hidden camera. One thumb-to-middle snap wakes her. A clap does not.
+
+    preview=True uses the looser held-board detector and does not cycle dance.
+    """
+    global cap, cam_index, cam_backend, cam_backend_name, last_good, miss_frames, _snap_cam_warned, _preview_cam_logged, _snap_reason
     from web import hologram_dance
     if cap is None or not cap.isOpened():
         opened = _open_best_camera()
@@ -4254,7 +5095,10 @@ def _watch_wake_snap():
         cap, cam_index, cam_backend, cam_backend_name = opened
         last_good = None
         miss_frames = 0
-        print("Camera on, no window. Snap thumb to middle, or say asmamir.")
+        if _recording_snap or preview:
+            print("Anime camera opening.", flush=True)
+        else:
+            print("Camera on, no window. Snap thumb to middle, or say asmamir.")
     try:
         ok, frame = cap.read()
     except Exception as exc:
@@ -4270,10 +5114,47 @@ def _watch_wake_snap():
         elif frame.ndim == 3 and frame.shape[2] == 4:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
         frame = cv2.flip(frame, 1)
+        if _p5_armed or _anime_cam_hold:
+            _hide_anime_camera(force=True)
+            return False
+        if (_recording_snap or preview) and not _p5_armed:
+            _show_anime_camera(frame)
+            if preview and not _preview_cam_logged:
+                _preview_cam_logged = True
+                print(
+                    f"Anime camera reading {frame.shape[1]}x{frame.shape[0]}, "
+                    f"brightness {float(frame.mean()):.0f}.",
+                    flush=True,
+                )
+        if _recording_snap:
+            _keep_record_frame(frame)
         rgb = np.ascontiguousarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
         rgb.flags.writeable = False
         seen = hands.process(rgb)
-        snapped = hologram_dance.feed_snap(getattr(seen, "multi_hand_landmarks", None))
+        landmarks = getattr(seen, "multi_hand_landmarks", None)
+        try:
+            hologram_dance.note_motion(landmarks)
+        except Exception as exc:
+            print(f"Snap motion skipped: {exc}", flush=True)
+            landmarks = None
+        if preview and not _p5_armed:
+            _show_anime_camera(frame)
+            distance = hologram_dance.latest_thumb_middle()
+            if distance is not None:
+                matched = hologram_dance.hand_matches_snap1()
+                score = hologram_dance.motion_score_now()
+                print(
+                    f"Anime hand thumb-middle {distance:.2f}. snap-1 score {score:.2f}. "
+                    f"match {'yes' if matched else 'no'}.",
+                    flush=True,
+                )
+            if hologram_dance.matches_saved_motion():
+                _snap_reason = "motion match"
+                snapped = True
+            else:
+                snapped = False
+        else:
+            snapped = hologram_dance.feed_snap(landmarks)
     except Exception as exc:
         print(f"Snap watch stayed up: {exc}")
         time.sleep(0.05)
@@ -4301,6 +5182,44 @@ def _ui_key(key):
 while True:
     if shutdown_requested:
         finish_shutdown()
+    if _restart_anime:
+        _restart_anime = False
+        _anime_cam_hold = False
+        _p5_armed = False
+        _select_shot = None
+        _close_p5_board()
+        _hide_anime_camera(force=True)
+        set_session_mode("anime")
+        anime_pending = "screen"
+        print("Restart anime. Drag a rectangle.", flush=True)
+    if _need_ui_standby:
+        _need_ui_standby = False
+        _anime_cam_hold = False
+        job = _snap_save
+        _snap_save = None
+        writer = job.get("writer") if isinstance(job, dict) else None
+        if writer is not None:
+            try:
+                writer.release()
+            except Exception:
+                pass
+        _close_p5_board()
+        _hide_anime_camera(force=True)
+    if _p5_armed or _anime_cam_hold:
+        if _anime_cam_open:
+            _hide_anime_camera(force=True)
+        cv2.waitKey(1)
+        continue
+    elif _snap_save is not None:
+        _pump_snap_save()
+        continue
+    elif _recording_snap:
+        _capture_record_frame()
+        continue
+    if _snap_close:
+        _snap_close = False
+        if not (_p5_open and not _p5_armed):
+            _hide_anime_camera()
     load_indonesian_listener()
     from web import hologram_dance
     if anime_active:

@@ -245,7 +245,8 @@ def draw(pos, col, yaw, pitch, width, height, background):
     _gl.glClear(_GL_COLOR_BUFFER_BIT | _GL_DEPTH_BUFFER_BIT)
     _gl.glMatrixMode(_GL_PROJECTION)
     _gl.glLoadIdentity()
-    span = height * 0.90
+    # Same fit as the standby plate: the unit box is one third of the window.
+    span = height / 3.0
     half_x = width / (2.0 * span)
     half_y = height / (2.0 * span)
     _gl.glOrtho(-half_x, half_x, -half_y, half_y, -2.0, 2.0)

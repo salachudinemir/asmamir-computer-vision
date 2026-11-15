@@ -165,7 +165,7 @@ def _overlay_hwnd():
         length = _user32.GetWindowTextLengthW(hwnd)
         buffer = ctypes.create_unicode_buffer(length + 1)
         _user32.GetWindowTextW(hwnd, buffer, length + 1)
-        if buffer.value == "Asmamir Computer Vision":
+        if buffer.value == "Asmamir Computer Vision AI Assistant":
             found.append(hwnd)
             return False
         return True
@@ -188,7 +188,7 @@ def youtube_hwnd():
         buffer = ctypes.create_unicode_buffer(length + 1)
         _user32.GetWindowTextW(hwnd, buffer, length + 1)
         title = buffer.value or ""
-        if "youtube" in title.lower() and title != "Asmamir Computer Vision":
+        if "youtube" in title.lower() and title != "Asmamir Computer Vision AI Assistant":
             found.append(hwnd)
             return False
         return True

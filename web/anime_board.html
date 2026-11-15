@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Anime board</title>
+  <title>Anime stipple</title>
   <style>
     html, body { margin: 0; background: #000; overflow: hidden; }
   </style>
@@ -37,7 +37,7 @@ function setup() {
   sample();
   placeTargets();
   freshInk();
-  started = millis();
+  setInterval(pollArm, 200);
 }
 
 function sample() {
@@ -161,15 +161,36 @@ function freshInk() {
   for (const cell of cells) cell.done = false;
 }
 
+function showPhoto() {
+  background(PAPER);
+  if (!img || img.width < 2) return;
+  const scale = Math.min(width / img.width, height / img.height);
+  const drawW = img.width * scale;
+  const drawH = img.height * scale;
+  image(img, (width - drawW) / 2, (height - drawH) / 2, drawW, drawH);
+}
+
+function pollArm() {
+  if (started) return;
+  fetch("/arm", {cache: "no-store"}).then((res) => res.text()).then((text) => {
+    if (!started && text.trim() === "go") started = millis();
+  }).catch(() => {});
+}
+
 function draw() {
+  if (!started) {
+    showPhoto();
+    return;
+  }
   if (plate) {
     image(plate, 0, 0);
     return;
   }
   background(PAPER);
-  if (!started || cells.length === 0 || !ink) return;
+  if (cells.length === 0 || !ink) return;
   const elapsed = millis() - started;
   const open = elapsed >= REVEAL_MS ? Infinity : elapsed;
+  let budget = 1500;
   for (let i = live; i < cells.length; i++) {
     const cell = cells[i];
     if (cell.showAt > open) break;
@@ -177,6 +198,8 @@ function draw() {
     ink.fill(cell.r, cell.g, cell.b);
     ink.circle(cell.tx, cell.ty, dot);
     cell.done = true;
+    budget -= 1;
+    if (budget <= 0) break;
   }
   while (live < cells.length && cells[live].done) live += 1;
   image(ink, 0, 0);
@@ -190,13 +213,9 @@ function draw() {
 }
 
 function windowResized() {
+  if (started) return;
   pixelDensity(1);
   resizeCanvas(windowWidth, windowHeight);
-  plate = null;
-  if (started) {
-    placeTargets();
-    freshInk();
-  }
 }
 </script>
 </body>

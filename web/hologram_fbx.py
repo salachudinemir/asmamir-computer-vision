@@ -22,6 +22,23 @@ _ufbx_lock = threading.Lock()
 
 
 def _skip_skinner_gc():
+    """Drop the hologram and the stipple browser before ufbx is torn down."""
+    try:
+        import sys
+        app_mod = sys.modules.get("__main__") or sys.modules.get("app")
+        closer = getattr(app_mod, "_close_p5_board", None) if app_mod is not None else None
+        if closer is not None:
+            closer()
+        stopper = getattr(app_mod, "_stop_chat_companions", None) if app_mod is not None else None
+        if stopper is not None:
+            stopper()
+    except Exception:
+        pass
+    try:
+        cv2.destroyAllWindows()
+        cv2.waitKey(1)
+    except Exception:
+        pass
     if _retain:
         os._exit(0)
 

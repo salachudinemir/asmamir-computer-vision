@@ -17,6 +17,10 @@ _cache_key = None
 _plate = None
 _yaw = 0.0
 _pitch = 0.0
+# Long side of the posed figure, as a fraction of the plate height.
+# Was 0.58 of a 1280x720 plate that the fullscreen window then stretched.
+_FIGURE = 1.0 / 3.0
+_plate_log = None
 _pos = None
 _col = None
 _orbit_ready = False
@@ -65,10 +69,21 @@ def warm():
 
 
 def render(width, height, tick=0):
-    """BGR plate of Arissa at the current yaw and pitch. Never the old glb."""
+    """BGR plate of Arissa at the current yaw and pitch. Never the old glb.
+
+    `width` and `height` are the window. The plate is that size, so the
+    fullscreen window does not stretch a smaller buffer.
+    """
+    global _plate_log
     del tick
     width = max(640, int(width))
     height = max(360, int(height))
+    if _plate_log != (width, height):
+        _plate_log = (width, height)
+        print(
+            f"Hologram plate {width}x{height}. "
+            f"Figure is one third of that height."
+        )
     posed = None
     try:
         from web import hologram_dance
@@ -198,7 +213,7 @@ def _paint_turn(pos, col, yaw, pitch, width, height):
     zz = -sy * x + cy * z
     y2 = cp * y - sp * zz
     z2 = sp * y + cp * zz
-    span_px = height * 0.58
+    span_px = height * _FIGURE
     sx = np.rint(width * 0.5 + xz * span_px).astype(np.int32)
     sy = np.rint(height * 0.50 - y2 * span_px).astype(np.int32)
     min_x = sx.min(axis=1)

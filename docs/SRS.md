@@ -66,7 +66,14 @@ From any other mode, including anime, dance, and asleep, the same phrase returns
 
 A longer sentence that merely contains those words does not quit.
 
-## 8. Login script
+## 8. Standalone animation folder
+
+1. `animation/` is a separate package. `app.py` does not import it and no voice phrase starts it.
+2. From the project folder, the dotted module form is `python -m animation.ascii_reveal`, `python -m animation.cosmic_bloom`, `python -m animation.neon_thread_heart`, and `python -m animation.aqua_mandala`.
+3. `ascii_reveal` reads `--image` and writes an mp4. `--out` chooses the path. `--seconds` defaults to 9. The file is a cell reveal: a green trail, then the source pixels. Generated mp4 files are not part of the repository.
+4. `cosmic_bloom` and `neon_thread_heart` open their own windows and block until the window closes. `aqua_mandala` does the same with an explicit turtle import.
+
+## 9. Login script
 
 `scripts/start_login.cmd` is not registered by this repository.
 

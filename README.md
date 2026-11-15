@@ -76,6 +76,19 @@ Task Scheduler is optional and is not registered by this repository. You may poi
 
 The same process can also count fingers, read a page, apply camera filters, and open Airbus, Desert Eagle, dragon, and a hand cursor.
 
+## Standalone animations
+
+`animation/` is not started by a voice command. From the project folder:
+
+```bat
+python -m animation.ascii_reveal --image path\to\image.jpg --out animation\reveal.mp4
+python -m animation.cosmic_bloom
+python -m animation.neon_thread_heart
+python -m animation.aqua_mandala
+```
+
+`ascii_reveal` writes an mp4. The other three open a window and wait until it closes. Generated mp4 files are not committed.
+
 ## License
 
 Code written for this project is MIT. Mixamo FBX files, 3D models, textures, Vosk weights, the Piper voice, and Whisper weights stay under their own licenses and are not distributed from this repository.

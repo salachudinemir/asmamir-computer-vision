@@ -49,6 +49,10 @@ A transcript that is only the word `standby`, repeated any number of times, or o
 
 From standby only, the whole phrase `shutdown`, `shut down`, `shutdown and quit`, `shut down and quit`, `quit`, `exit`, `goodbye`, or `good bye` exits the process. From any other mode the same phrase returns to the sit-up and leaves the app running. Say it again from standby to quit.
 
+## Standalone animations
+
+`animation/` is not a voice mode. It runs on its own, from the project folder: `python -m animation.ascii_reveal`, `python -m animation.cosmic_bloom`, `python -m animation.neon_thread_heart`, and `python -m animation.aqua_mandala`. `ascii_reveal` needs `--image` and writes an mp4 (`--out` sets the path). The other three open a window and wait until it is closed. Generated video files stay out of git.
+
 ## Companions
 
 Ollama on port 11434, Hermes on port 8642, and `ollama launch dsh` may run only while `python -m app.py` is running. `app.py` starts `ollama serve` when port 11434 is quiet. It does not start the Hermes gateway. Process exit stops listeners on 11434, 8642, and 3080, and stops `ollama serve`, `ollama launch dsh`, and the Hermes gateway.

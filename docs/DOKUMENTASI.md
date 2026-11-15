@@ -58,6 +58,15 @@ Fill triggers:
 
 `record snap` and `records snap` are kept before chat, even if another grammar rewrites the open text. The camera window opens at once. Audio is captured on the listener. The wav and the mp4 are written on the window thread, one piece at a time, so the window keeps answering. Slots are `snap-1` through `snap-5`. A marker `models/snaps/next.txt` advances the overwrite after all five wavs exist. The log line is `Replaced snap-N.`
 
+## Standalone animation folder
+
+`animation/` is a package with an empty `__init__.py`. The assistant does not import it. From the project folder:
+
+- `python -m animation.ascii_reveal --image <path> --out animation/<name>.mp4` writes a cell reveal. `--seconds` defaults to 9. The loop paints a green trail, then copies source pixels into revealed cells.
+- `python -m animation.cosmic_bloom`, `python -m animation.neon_thread_heart`, and `python -m animation.aqua_mandala` each open a window and block on that window.
+
+A comma or a filesystem path after `-m` is not a module name. Generated mp4 files are gitignored.
+
 ## YouTube finger cursor
 
 `open youtube` calls `expect_youtube()` before the browser title exists, so the pointer is armed on that phrase. The standby loop then hides the sit-up window with `ShowWindow` and does not call the fullscreen hologram paint while that cursor is active. After `waitKey`, the Windows cursor is shown again. The index tip calls `SetCursorPos`. A pinch sends a left click. Two fingers send a wheel. When the scan no longer sees a visible YouTube title, and the short expect window has elapsed, the cursor disarms unless voice armed it, and the sit-up window is shown again.

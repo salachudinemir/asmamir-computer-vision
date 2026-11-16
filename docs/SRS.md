@@ -66,14 +66,23 @@ From any other mode, including anime, dance, and asleep, the same phrase returns
 
 A longer sentence that merely contains those words does not quit.
 
-## 8. Standalone animation folder
+## 8. Hand bloom
+
+1. The whole phrase `hand bloom` turns the mode on. A longer sentence that merely contains those words does not.
+2. Flowers are drawn on the camera frame the assistant already captures. A second webcam is not opened.
+3. The pinch distance between the thumb tip and the index tip grows a blue stem from each fingertip. A wider pinch raises the grow value. A closer pinch raises the bloom value. When the stem has grown, a filled flower with five petals is drawn at the tip. The frame shows Grow and Bloom.
+4. Entering the mode leaves anime, dance, YouTube, canvas, and the sit-up hologram so they do not cover the camera. The camera window stays up while the mode is on.
+5. `standby`, including a repeated standby phrase, and the existing stop phrases that return to the sit-up leave hand bloom and show the sit-up again. The app keeps running.
+6. Shutdown and goodbye still quit only from standby.
+
+## 9. Standalone animation folder
 
 1. `animation/` is a separate package. `app.py` does not import it and no voice phrase starts it.
 2. From the project folder, the dotted module form is `python -m animation.ascii_reveal`, `python -m animation.cosmic_bloom`, `python -m animation.neon_thread_heart`, and `python -m animation.aqua_mandala`.
 3. `ascii_reveal` reads `--image` and writes an mp4. `--out` chooses the path. `--seconds` defaults to 9. The file is a cell reveal: a green trail, then the source pixels. Generated mp4 files are not part of the repository.
 4. `cosmic_bloom` and `neon_thread_heart` open their own windows and block until the window closes. `aqua_mandala` does the same with an explicit turtle import.
 
-## 9. Login script
+## 10. Login script
 
 `scripts/start_login.cmd` is not registered by this repository.
 

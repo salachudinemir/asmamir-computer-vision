@@ -49,6 +49,10 @@ A transcript that is only the word `standby`, repeated any number of times, or o
 
 From standby only, the whole phrase `shutdown`, `shut down`, `shutdown and quit`, `shut down and quit`, `quit`, `exit`, `goodbye`, or `good bye` exits the process. From any other mode the same phrase returns to the sit-up and leaves the app running. Say it again from standby to quit.
 
+## Hand bloom
+
+The whole phrase `hand bloom` turns the mode on. A longer sentence that merely contains those words does not. Flowers are drawn on the camera the assistant already uses. No second webcam is opened. A pinch grows blue stems from the fingertips and opens a five-petal bloom. The picture shows Grow and Bloom. Anime, dance, YouTube, canvas, and the sit-up hologram are left so they do not cover that camera. `standby` leaves the mode and returns to the sit-up. The app keeps running.
+
 ## Standalone animations
 
 `animation/` is not a voice mode. It runs on its own, from the project folder: `python -m animation.ascii_reveal`, `python -m animation.cosmic_bloom`, `python -m animation.neon_thread_heart`, and `python -m animation.aqua_mandala`. `ascii_reveal` needs `--image` and writes an mp4 (`--out` sets the path). The other three open a window and wait until it is closed. Generated video files stay out of git.

@@ -202,6 +202,10 @@ def line(key, **kwargs):
             "en": "I could not do that on WeChat.",
             "id": "Itu tidak bisa di WeChat.",
         },
+        "bloom_on": {
+            "en": "Hand bloom is on. A pinch grows the stems and opens the flowers.",
+            "id": "Hand bloom nyala. Cubitan menumbuhkan batang dan membuka bunga.",
+        },
         "fog_on": {
             "en": "Fog mirror is clear. An open mouth close to the camera fogs the whole glass quickly. One index finger wipes a small path. An open hand wipes a wider patch.",
             "id": "Cermin kabut bersih. Mulut terbuka dekat kamera mengabutkan seluruh kaca dengan cepat. Satu telunjuk menghapus sedikit. Telapak terbuka menghapus lebih lebar.",
@@ -613,6 +617,7 @@ canvas_active = False  # Overlay stays off until "draw" / "gambar" / "canvas".
 airbus_active = False  # Overlay stays off until "airbus".
 filter_active = False  # Overlay stays off until "filter" / "filter kamera".
 fog_active = False  # Overlay stays off until "fog mirror".
+bloom_active = False  # Overlay stays off until the whole phrase "hand bloom".
 anime_active = False  # Screen stipple stays off until "anime" / "stipple". No camera window.
 _anime_mod = None
 _fog_mod = None
@@ -643,7 +648,7 @@ def anime_reset():
 def set_session_mode(mode):
     """Exclusive count / fruit / overlay. None = standby."""
     global system_active, fruit_active, deagle_active, dragon_active
-    global canvas_active, airbus_active, filter_active, fog_active, anime_active, anime_pending
+    global canvas_active, airbus_active, filter_active, fog_active, bloom_active, anime_active, anime_pending
     system_active = mode == "count"
     fruit_active = mode == "fruit"
     deagle_active = mode == "deagle"
@@ -652,6 +657,7 @@ def set_session_mode(mode):
     airbus_active = mode == "airbus"
     filter_active = mode == "filter"
     fog_active = mode == "fog"
+    bloom_active = mode == "bloom"
     anime_active = mode == "anime"
     if mode != "anime":
         anime_pending = None
@@ -1075,6 +1081,7 @@ CLOSE_PHRASES = json.dumps([
 ])
 # Own grammar, checked before color and YouTube. Exact phrase only.
 FOG_PHRASES = json.dumps(["fog mirror", "[unk]"])
+BLOOM_PHRASES = json.dumps(["hand bloom", "[unk]"])
 WAKE_PHRASES = json.dumps(["asmamir", "hey asmamir", "as mamir", "asma mir", "[unk]"])
 DANCE_PHRASES = json.dumps(["stop dance", "dance", "twerk", "rumba", "salsa", "[unk]"])
 # Tiny grammar: full phrases only. One-word draw/airbus is too easy for noise.
@@ -1153,6 +1160,7 @@ def _register_phrase_grammar(label, grammar):
 
 
 _register_phrase_grammar("Canvas", CANVAS_PHRASES)
+_register_phrase_grammar("Hand bloom", BLOOM_PHRASES)
 _register_phrase_grammar("Anime", ANIME_PHRASES)
 _register_phrase_grammar("Close tab", CLOSE_PHRASES)
 _register_phrase_grammar("Quit", QUIT_PHRASES)
@@ -1491,6 +1499,7 @@ def transcripts_from(audio):
             or wants_youtube_play(english)
             or wants_wechat_action(english)
             or wants_fog(english)
+            or wants_hand_bloom(english)
             or wants_pointer(english)
             or wants_look(english)
             or wants_airbus(english)
@@ -1630,6 +1639,17 @@ def transcripts_from(audio):
     )
     if fog_hits:
         return fog_hits
+    bloom_hit = _vosk_text(audio, BLOOM_PHRASES)
+    bloom_hits = _confirmed_keep(
+        wants_hand_bloom,
+        "Hand bloom",
+        bloom_hit,
+        hinted,
+        open_text,
+        need_open=True,
+    )
+    if bloom_hits:
+        return bloom_hits
     pointer_hits = _confirmed_keep(
         wants_pointer,
         "Mouse",
@@ -2552,6 +2572,11 @@ def _is_fog_mirror(command):
     return " ".join(command.replace("-", " ").lower().split()) == "fog mirror"
 
 
+def wants_hand_bloom(command):
+    """The whole transcript is hand bloom. A longer sentence does not start it."""
+    return _whole_phrase(command) == "hand bloom"
+
+
 def wants_fog(command):
     return _is_fog_mirror(command)
 
@@ -2834,6 +2859,7 @@ def _vision_modes_on():
         or filter_active
         or anime_active
         or fog_active
+        or bloom_active
     )
 
 
@@ -3325,6 +3351,11 @@ def listen_for_command():
                     set_session_mode("fog")
                     print("Fog mirror ON")
                     speak(line("fog_on"))
+                    continue
+                if any(wants_hand_bloom(guess) for guess in guesses):
+                    set_session_mode("bloom")
+                    print("Hand bloom ON")
+                    speak(line("bloom_on"))
                     continue
                 if any(wants_canvas(guess) for guess in guesses) and not any(
                     wants_canvas_off(guess) for guess in guesses
@@ -5395,6 +5426,7 @@ while True:
     filter_now = filter_active
     anime_now = anime_active
     fog_now = fog_active
+    bloom_now = bloom_active
     count_now = system_active
     fruit_now = fruit_active
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -5421,6 +5453,10 @@ while True:
         results = hands.process(rgb_frame)
         draw_fog_overlay(frame, results)
         _present_fog(frame)
+    elif bloom_now:
+        results = hands.process(rgb_frame)
+        from web import hand_bloom
+        hand_bloom.draw(frame, results)
     elif airbus_now:
         results = hands.process(rgb_frame)
         draw_airbus_overlay(frame, results)
@@ -5551,7 +5587,7 @@ while True:
         apply_camera_screen()
     elif not anime_now:
         _close_anime_board()
-    if not (deagle_now or dragon_now or canvas_now or filter_now or anime_now or fog_now or airbus_now or count_now or fruit_now) and not _show_camera:
+    if not (deagle_now or dragon_now or canvas_now or filter_now or anime_now or fog_now or bloom_now or airbus_now or count_now or fruit_now) and not _show_camera:
         _drive_pointer(frame, rgb_frame)
     if not fog_now:
         if _fog_window_open:

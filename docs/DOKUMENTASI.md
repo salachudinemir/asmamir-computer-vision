@@ -67,6 +67,10 @@ Fill triggers:
 
 A comma or a filesystem path after `-m` is not a module name. Generated mp4 files are gitignored.
 
+## Hand bloom
+
+The whole phrase `hand bloom` is kept before chat. `web/hand_bloom.py` draws on the frame from the webcam `app.py` already opened. It does not open a second camera. Thumb tip to index tip sets the pinch distance. That distance grows a blue stem from each fingertip and, once the stem has grown, a five-petal flower. The overlay prints Grow and Bloom. The mode hides the sit-up, anime, dance, YouTube, and canvas surfaces. `standby` clears the mode and returns to the sit-up. The process keeps running.
+
 ## YouTube finger cursor
 
 `open youtube` calls `expect_youtube()` before the browser title exists, so the pointer is armed on that phrase. The standby loop then hides the sit-up window with `ShowWindow` and does not call the fullscreen hologram paint while that cursor is active. After `waitKey`, the Windows cursor is shown again. The index tip calls `SetCursorPos`. A pinch sends a left click. Two fingers send a wheel. When the scan no longer sees a visible YouTube title, and the short expect window has elapsed, the cursor disarms unless voice armed it, and the sit-up window is shown again.

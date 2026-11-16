@@ -27,51 +27,54 @@ def pink_color(f):
     return red, green, blue
 
 # ------------- HEART DRAWING -------------
-for i in range(THREADS):
+try:
+    for i in range(THREADS):
 
-    # Angle around the heart
-    a = 2 * m.pi * i / THREADS
+        # Angle around the heart
+        a = 2 * m.pi * i / THREADS
 
-    # Mathematical heart outline
-    xo = 16 * (m.sin(a) ** 3) * SCALE
+        # Mathematical heart outline
+        xo = 16 * (m.sin(a) ** 3) * SCALE
 
-    yo = (
-        13 * m.cos(a)
-        - 5 * m.cos(2 * a)
-        - 2 * m.cos(3 * a)
-        - m.cos(4 * a)
-    ) * SCALE
+        yo = (
+            13 * m.cos(a)
+            - 5 * m.cos(2 * a)
+            - 2 * m.cos(3 * a)
+            - m.cos(4 * a)
+        ) * SCALE
 
-    # Random thread length
-    L = r.uniform(0.15, 0.58)
+        # Random thread length
+        L = r.uniform(0.15, 0.58)
 
-    # Inner endpoint
-    xi = xo * (1 - L)
-    yi = yo * (1 - L)
+        # Inner endpoint
+        xi = xo * (1 - L)
+        yi = yo * (1 - L)
 
-    # Draw each thread in small glowing-looking segments
-    for j in range(SEGMENTS):
-        f = j / SEGMENTS
+        # Draw each thread in small glowing-looking segments
+        for j in range(SEGMENTS):
+            f = j / SEGMENTS
 
-        x1 = xo + (xi - xo) * f
-        y1 = yo + (yi - yo) * f
+            x1 = xo + (xi - xo) * f
+            y1 = yo + (yi - yo) * f
 
-        x2 = xo + (xi - xo) * (f + 1 / SEGMENTS)
-        y2 = yo + (yi - yo) * (f + 1 / SEGMENTS)
+            x2 = xo + (xi - xo) * (f + 1 / SEGMENTS)
+            y2 = yo + (yi - yo) * (f + 1 / SEGMENTS)
 
-        t.pencolor(pink_color(f))
-        t.pensize(round(r.uniform(0.7, 1.5)))
+            t.pencolor(pink_color(f))
+            t.pensize(round(r.uniform(0.7, 1.5)))
 
-        t.penup()
-        t.goto(x1, y1)
-        t.pendown()
-        t.goto(x2, y2)
+            t.penup()
+            t.goto(x1, y1)
+            t.pendown()
+            t.goto(x2, y2)
 
-    # Show the drawing progressively
-    if i % 4 == 0:
-        t.update()
-        time.sleep(0.1)
+        # Show the drawing progressively
+        if i % 4 == 0:
+            t.update()
+            time.sleep(0.1)
 
-# ------------- FINISH -------------
-t.update()
-t.done()
+    # ------------- FINISH -------------
+    t.update()
+    t.done()
+except t.Terminator:
+    pass

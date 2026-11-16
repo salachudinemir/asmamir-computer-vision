@@ -1,5 +1,6 @@
 import turtle
 import math
+import tkinter
 import time
 import random
 
@@ -149,8 +150,11 @@ def main():
     screen.onkey(restart, "r")
     screen.onkey(turtle.bye, "Escape")
     def animate():
-        painter.draw_step()
-        screen.ontimer(animate, DELAY)
+        try:
+            painter.draw_step()
+            screen.ontimer(animate, DELAY)
+        except (turtle.Terminator, tkinter.TclError):
+            pass
     screen.ontimer(animate, DELAY)
     screen.mainloop()
 

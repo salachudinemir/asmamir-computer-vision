@@ -77,10 +77,11 @@ A longer sentence that merely contains those words does not quit.
 
 ## 9. Standalone animation folder
 
-1. `animation/` is a separate package. `app.py` does not import it and no voice phrase starts it.
-2. From the project folder, the dotted module form is `python -m animation.ascii_reveal`, `python -m animation.cosmic_bloom`, `python -m animation.neon_thread_heart`, and `python -m animation.aqua_mandala`.
-3. `ascii_reveal` reads `--image` and writes an mp4. `--out` chooses the path. `--seconds` defaults to 9. The file is a cell reveal: a green trail, then the source pixels. Generated mp4 files are not part of the repository.
-4. `cosmic_bloom` and `neon_thread_heart` open their own windows and block until the window closes. `aqua_mandala` does the same with an explicit turtle import.
+1. `animation/` is a separate package meant to be shared. `app.py` does not import it. No voice phrase starts these scripts. Hand bloom is the assistant mode in section 8, not a file in this folder.
+2. From the project folder, either form works: `python .\animation\<file>.py` or `python -m animation.<name>`. A comma or a filesystem path after `-m` is not a module name.
+3. `ascii_reveal` requires `--image` and `--out`. `--seconds` defaults to 9. It writes an mp4: a green trail, then the source pixels. Generated mp4 files are not part of the repository.
+4. The other scripts open their own window: `aqua_mandala`, `botanical_lily`, `butterfly_curve`, `clover_art`, `cosmic_bloom`, `flower`, `make_a_wish`, `math_plate`, `neon_thread_heart`, `radar_scanner`, `rose_art`, and `spiderman_particles`.
+5. Closing a turtle window while `aqua_mandala`, `butterfly_curve`, `flower`, `math_plate`, or `neon_thread_heart` is drawing ends the script quietly.
 
 ## 10. Login script
 

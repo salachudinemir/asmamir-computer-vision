@@ -1,6 +1,7 @@
 import turtle
 import math
 import random
+import tkinter
 
 random.seed(7)
 
@@ -82,11 +83,14 @@ def center():
         t.goto(x, y)
         t.dot(5, "#ff9f1c")
 
-stars()
-stem()
-leaf(-40, -15, 120)
-leaf(130, -110, 165)
-bloom()
-center()
-t.hideturtle()
-turtle.done()
+try:
+    stars()
+    stem()
+    leaf(-40, -15, 120)
+    leaf(130, -110, 165)
+    bloom()
+    center()
+    t.hideturtle()
+    turtle.done()
+except (turtle.Terminator, tkinter.TclError):
+    pass

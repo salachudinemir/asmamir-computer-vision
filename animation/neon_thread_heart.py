@@ -2,6 +2,7 @@ import turtle as t
 import math as m
 import random as r
 import time
+import tkinter
 
 # ------------- SCREEN SETUP -------------
 s = t.Screen()
@@ -76,5 +77,5 @@ try:
     # ------------- FINISH -------------
     t.update()
     t.done()
-except t.Terminator:
+except (t.Terminator, tkinter.TclError):
     pass

@@ -60,12 +60,16 @@ Fill triggers:
 
 ## Standalone animation folder
 
-`animation/` is a package with an empty `__init__.py`. The assistant does not import it. From the project folder:
+`animation/` is a package with an empty `__init__.py`. It is meant to be shared on its own. The assistant does not import it, and no voice phrase starts these files. Hand bloom lives in `web/hand_bloom.py`.
 
-- `python -m animation.ascii_reveal --image <path> --out animation/<name>.mp4` writes a cell reveal. `--seconds` defaults to 9. The loop paints a green trail, then copies source pixels into revealed cells.
-- `python -m animation.cosmic_bloom`, `python -m animation.neon_thread_heart`, and `python -m animation.aqua_mandala` each open a window and block on that window.
+From the project folder:
 
-A comma or a filesystem path after `-m` is not a module name. Generated mp4 files are gitignored.
+- `python .\animation\<file>.py`
+- `python -m animation.<name>`
+
+`ascii_reveal` requires `--image` and `--out`. `--seconds` defaults to 9. It writes a cell reveal: a green trail, then the source pixels. A comma or a filesystem path after `-m` is not a module name. Generated mp4 files are gitignored.
+
+The other scripts open their own window: `aqua_mandala`, `botanical_lily`, `butterfly_curve`, `clover_art`, `cosmic_bloom`, `flower`, `make_a_wish`, `math_plate`, `neon_thread_heart`, `radar_scanner`, `rose_art`, and `spiderman_particles`. Closing a turtle window during `aqua_mandala`, `butterfly_curve`, `flower`, `math_plate`, or `neon_thread_heart` is caught and the process exits quietly.
 
 ## Hand bloom
 

@@ -55,7 +55,7 @@ The whole phrase `hand bloom` turns the mode on. A longer sentence that merely c
 
 ## Standalone animations
 
-`animation/` is not a voice mode. It runs on its own, from the project folder: `python -m animation.ascii_reveal`, `python -m animation.cosmic_bloom`, `python -m animation.neon_thread_heart`, and `python -m animation.aqua_mandala`. `ascii_reveal` needs `--image` and writes an mp4 (`--out` sets the path). The other three open a window and wait until it is closed. Generated video files stay out of git.
+`animation/` is a shared set of standalone scripts. They are not voice modes. Hand bloom is the assistant mode described above. From the project folder, run `python .\animation\<file>.py` or `python -m animation.<name>`. `ascii_reveal` requires `--image` and `--out` and writes an mp4. The other scripts each open their own window: `aqua_mandala`, `botanical_lily`, `butterfly_curve`, `clover_art`, `cosmic_bloom`, `flower`, `make_a_wish`, `math_plate`, `neon_thread_heart`, `radar_scanner`, `rose_art`, and `spiderman_particles`. Closing a turtle window while the drawing is still running exits quietly. Generated mp4 files stay out of git.
 
 ## Companions
 

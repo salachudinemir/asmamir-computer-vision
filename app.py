@@ -1051,7 +1051,7 @@ VOSK_PHRASES = json.dumps([
     "[unk]",
 ])
 # Own grammar, checked before every other phrase. Exact words only.
-CANVAS_PHRASES = json.dumps(["canvas", "draw", "drawing", "[unk]"])
+CANVAS_PHRASES = json.dumps(["canvas mode", "[unk]"])
 # "stipple anime" is heard as "stipple" plus [unk]. "anime" is heard as "anime" plus [unk].
 # "anime camera" stays out of this list so a trailing noise does not hide the word anime.
 ANIME_PHRASES = json.dumps([
@@ -1069,6 +1069,7 @@ ANIME_PHRASES = json.dumps([
     "stop stipple",
     "stop stipple art",
     "restart anime",
+    "restart anime mode",
     "[unk]",
 ])
 # "close youtube" is heard as "close you tube".
@@ -1080,12 +1081,28 @@ CLOSE_PHRASES = json.dumps([
     "[unk]",
 ])
 # Own grammar, checked before color and YouTube. Exact phrase only.
-FOG_PHRASES = json.dumps(["fog mirror", "[unk]"])
-BLOOM_PHRASES = json.dumps(["hand bloom", "[unk]"])
+FOG_PHRASES = json.dumps(["fog mirror mode", "[unk]"])
+BLOOM_PHRASES = json.dumps(["hand bloom mode", "[unk]"])
 WAKE_PHRASES = json.dumps(["asmamir", "hey asmamir", "as mamir", "asma mir", "[unk]"])
-DANCE_PHRASES = json.dumps(["stop dance", "dance", "twerk", "rumba", "salsa", "[unk]"])
+DANCE_PHRASES = json.dumps(["stop dance", "dance mode", "[unk]"])
 # Tiny grammar: full phrases only. One-word draw/airbus is too easy for noise.
 MODE_PHRASES = json.dumps([
+    "standby mode",
+    "dance mode",
+    "anime mode",
+    "restart anime",
+    "restart anime mode",
+    "hand bloom mode",
+    "canvas mode",
+    "fog mirror mode",
+    "filter mode",
+    "airbus mode",
+    "deagle mode",
+    "dragon mode",
+    "count mode",
+    "fruit mode",
+    "youtube mode",
+    "mouse mode",
     "open canvas",
     "start drawing",
     "air canvas",
@@ -1167,7 +1184,7 @@ _register_phrase_grammar("Quit", QUIT_PHRASES)
 _register_phrase_grammar("Record snap", RECORD_SNAP_PHRASES)
 _register_phrase_grammar("Stipple arm", STIPPLE_ARM_PHRASES)
 _register_phrase_grammar("Dance", DANCE_PHRASES)
-STANDBY_PHRASES = json.dumps(["standby", "stand by", "[unk]"])
+STANDBY_PHRASES = json.dumps(["standby", "stand by", "standby mode", "[unk]"])
 _register_phrase_grammar("Standby", STANDBY_PHRASES)
 
 def _vosk_text(audio, grammar):
@@ -1387,7 +1404,8 @@ def _whole_phrase(command):
 
 
 _RECORD_EXACT = {"record snap", "records snap"}
-_DANCE_EXACT = {"twerk", "rumba", "salsa"}
+_RESTART_ANIME = {"restart anime", "restart anime mode"}
+_DANCE_EXACT = {"dance mode"}
 _STIPPLE_ARM = {"start", "capture", "start capture", "take screenshot"}
 
 
@@ -1462,6 +1480,12 @@ def transcripts_from(audio):
         if canvas_exact:
             print(f"Canvas kept: {canvas_exact}")
             return [canvas_exact]
+        if texts and all(_whole_phrase(text) in _RESTART_ANIME for text in texts):
+            print("Restart anime kept.")
+            return ["restart anime"]
+        if wants_hand_bloom(heard) or wants_hand_bloom(english):
+            print("Hand bloom kept: hand bloom mode")
+            return ["hand bloom mode"]
         anime_exact = _anime_exact(heard) or _anime_exact(english)
         if anime_exact:
             if anime_exact.startswith("stop ") or anime_exact.startswith("berhenti "):
@@ -1487,7 +1511,7 @@ def transcripts_from(audio):
                 return [candidate]
         if _is_fog_mirror(heard) or _is_fog_mirror(english):
             print("Fog mirror kept")
-            return ["fog mirror"]
+            return ["fog mirror mode"]
         guesses = [heard] if heard else []
         if english and english not in guesses and (
             switch_target(english) == "en"
@@ -1511,6 +1535,9 @@ def transcripts_from(audio):
             guesses.append(english)
         return guesses
     open_first = _whole_phrase(_vosk_text(audio, None))
+    if open_first == "hand bloom mode":
+        print("Hand bloom kept: hand bloom mode")
+        return ["hand bloom mode"]
     if _standby_only(open_first):
         print(f"Standby phrase kept: {open_first}")
         return [open_first]
@@ -1525,8 +1552,8 @@ def transcripts_from(audio):
         return [kept]
     open_restart = _whole_phrase(_vosk_text(audio, None))
     anime_phrase = _whole_phrase(_vosk_phrase(audio, ANIME_PHRASES))
-    if open_restart == "restart anime" or (
-        anime_phrase == "restart anime" and open_restart in {"", "restart anime"}
+    if open_restart in _RESTART_ANIME or (
+        anime_phrase in _RESTART_ANIME and open_restart in {"", *_RESTART_ANIME}
     ):
         print("Restart anime kept.")
         return ["restart anime"]
@@ -1536,9 +1563,9 @@ def transcripts_from(audio):
     # replace standby, youtube, or any other sentence.
     if anime_canon == "art":
         anime_canon = ""
-    if _anime_starts(anime_canon):
-        print(f"Anime kept: {anime_canon}")
-        return [anime_canon]
+    if _anime_starts(anime_canon) and open_restart == "anime mode":
+        print("Anime kept: anime mode")
+        return ["anime mode"]
     if anime_canon.startswith("stop ") or anime_canon.startswith("berhenti "):
         print(f"Anime stop kept: {anime_canon}")
         return [anime_canon]
@@ -1626,6 +1653,7 @@ def transcripts_from(audio):
         mode_hit,
         hinted,
         open_text,
+        need_open=True,
     )
     if anime_hits:
         return anime_hits
@@ -2385,55 +2413,22 @@ def start_look_background(user_text):
     threading.Thread(target=worker, daemon=True, name="look").start()
 
 def wants_counting(command):
-    text = command.replace("-", " ").lower().strip()
-    words = set(text.split())
-    if words & {"stop", "berhenti", "ignore", "abaikan"}:
-        return False
-    if text in {
-        "start", "count", "counting", "start count", "start counting",
-        "mulai", "hitung", "menghitung", "mulai hitung", "mulai menghitung",
-    }:
-        return True
-    if "hitung" in words or "menghitung" in words:
-        if words & {"ini", "itu", "soal", "this", "problem"}:
-            return False
-        return True
-    if "count" in words or "counting" in words:
-        return True
-    if "jari" in words and ("mulai" in words or "hitung" in words):
-        return True
-    return ("count" in words and "start" in words) or ("hitung" in words and "mulai" in words)
+    return _whole_phrase(command) == "count mode"
 
 def wants_fruit(command):
-    words = command.split()
-    return "fruit" in words or "buah" in words
+    return _whole_phrase(command) == "fruit mode"
 
 def wants_deagle(command):
-    """Voice gate: desert eagle / deagle / elang gurun only."""
-    text = command.replace("-", " ").lower()
-    words = set(text.split())
-    if "deagle" in words or "desert eagle" in text:
-        return True
-    if "elang" in words and "gurun" in words:
-        return True
-    return "pistol" in words and "deagle" in text
+    """Whole phrase deagle mode. A longer sentence does not open it."""
+    return _whole_phrase(command) == "deagle mode"
 
 def wants_dragon(command):
-    text = command.replace("-", " ").lower()
-    words = set(text.split())
-    return "dragon" in words or "naga" in words
+    return _whole_phrase(command) == "dragon mode"
 
 
 def wants_airbus(command):
-    """Whole short command only. Noise must not become air + bus."""
-    text = re.sub(r"[-.]+", " ", command.lower())
-    text = re.sub(r"\s+", " ", text).strip()
-    words = text.split()
-    if not words or len(words) > 4:
-        return False
-    if "airbus" in words:
-        return True
-    return any(words[i] == "air" and words[i + 1] == "bus" for i in range(len(words) - 1))
+    """Whole phrase airbus mode. A longer sentence does not open it."""
+    return _whole_phrase(command) == "airbus mode"
 
 
 def wants_airbus_off(command):
@@ -2443,8 +2438,8 @@ def wants_airbus_off(command):
     return "stop" in words or "berhenti" in words or "mati" in words or "off" in words
 
 def wants_canvas(command):
-    """The whole transcript is canvas, draw, or drawing. Nothing else opens it."""
-    return bool(_canvas_exact(command))
+    """The whole transcript is canvas mode. Nothing else opens it."""
+    return _whole_phrase(command) == "canvas mode"
 
 def wants_canvas_off(command):
     if not wants_canvas(command):
@@ -2454,35 +2449,21 @@ def wants_canvas_off(command):
 
 
 def wants_filter(command):
-    """Voice gate: filter / filters / filter kamera / camera filter. Short whole phrase."""
-    text = command.replace("-", " ").lower().strip()
-    words = text.split()
-    if not words or len(words) > 4:
-        return False
-    return "filter" in words or "filters" in words
+    """Whole phrase filter mode."""
+    return _whole_phrase(command) == "filter mode"
 
 
-_CANVAS_EXACT = {"canvas", "draw", "drawing"}
+_CANVAS_EXACT = {"canvas mode"}
 
 _ANIME_EXACT = {
-    "anime",
-    "stipple",
-    "stipple anime",
-    "stipple art",
-    "art",
-    "stippled",
-    "stippled anime",
-    "anime stipple",
     "anime mode",
-    "anime kamera",
-    "anime camera",
-    "kamera anime",
-    "camera anime",
     "stop anime",
     "stop stipple",
     "stop stipple art",
     "stop art",
     "berhenti anime",
+    "restart anime",
+    "restart anime mode",
 }
 _ANIME_ALIAS = {
     "a me": "anime",
@@ -2520,9 +2501,7 @@ def _anime_starts(canon):
     """True when the phrase opens the board. Stop phrases only close it."""
     if not canon:
         return False
-    if canon.startswith("stop ") or canon.startswith("berhenti "):
-        return False
-    if "camera" in canon or "kamera" in canon:
+    if canon in _RESTART_ANIME or canon != "anime mode":
         return False
     return True
 
@@ -2569,12 +2548,12 @@ def _is_fog_mirror(command):
     """Exact phrase only. Not cermin kabut, not a color, not open YouTube."""
     if not command:
         return False
-    return " ".join(command.replace("-", " ").lower().split()) == "fog mirror"
+    return " ".join(command.replace("-", " ").lower().split()) == "fog mirror mode"
 
 
 def wants_hand_bloom(command):
-    """The whole transcript is hand bloom. A longer sentence does not start it."""
-    return _whole_phrase(command) == "hand bloom"
+    """The whole transcript is hand bloom mode. hand blossom does not match."""
+    return _whole_phrase(command) == "hand bloom mode"
 
 
 def wants_fog(command):
@@ -2630,6 +2609,8 @@ def _standby_only(command):
     words = _whole_phrase(command).split()
     if not words:
         return False
+    if _whole_phrase(command) == "standby mode":
+        return True
     if all(word == "standby" for word in words):
         return True
     return len(words) % 2 == 0 and all(
@@ -2644,17 +2625,12 @@ def wants_standby(command):
 
 
 def wants_dance(command):
-    """Exact word dance. Cycles the Arissa clips. Does not open the camera window."""
-    if not command:
-        return False
-    return " ".join(command.replace("-", " ").lower().split()) == "dance"
+    """Whole phrase dance mode. Cycles the Arissa clips."""
+    return _whole_phrase(command) == "dance mode"
 
 
 def wants_named_dance(command):
-    """Exact twerk, rumba, or salsa. A longer sentence is not that dance."""
-    whole = _whole_phrase(command)
-    if whole in _DANCE_EXACT:
-        return whole
+    """Named clips are not a mode. dance mode cycles them."""
     return ""
 
 
@@ -3209,7 +3185,7 @@ def _take_voice_quit(guesses):
 def _take_restart_anime(guesses):
     """Whole transcript only. Close the held picture and open selection again."""
     global _restart_anime
-    if not any(_whole_phrase(guess) == "restart anime" for guess in guesses):
+    if not any(_whole_phrase(guess) in _RESTART_ANIME for guess in guesses):
         return False
     _restart_anime = True
     print("Restart anime.", flush=True)
@@ -3218,7 +3194,13 @@ def _take_restart_anime(guesses):
 
 def _take_leave_to_standby(guesses):
     """Standby, repeated, or stop anime / stop stipple art. The app keeps running."""
-    leave = {"stop anime", "stop stipple art"}
+    leave = {
+        "stop anime",
+        "stop stipple",
+        "stop stipple art",
+        "stop art",
+        "berhenti anime",
+    }
     if not any(_standby_only(guess) or _whole_phrase(guess) in leave for guess in guesses):
         return False
     print("Standby phrase closes anime.", flush=True)
@@ -3296,7 +3278,7 @@ def listen_for_command():
                     print("Heard: " + " | ".join(guesses))
                     _arm_stipple("voice")
                     continue
-                if _p5_open and not _p5_armed and _matches_saved_snap(audio):
+                if _p5_open and not _p5_armed and time.time() >= _p5_listen_at and _matches_saved_snap(audio):
                     _arm_stipple("sound match")
                     continue
                 if not guesses:
@@ -3393,6 +3375,16 @@ def listen_for_command():
                     last_spoken_fruit and any(last_spoken_fruit in guess for guess in guesses)
                 ):
                     print("Ignored own voice.")
+                    continue
+                if any(_whole_phrase(guess) == "youtube mode" for guess in guesses):
+                    ok = _load_open_apps().launch("youtube")
+                    if ok:
+                        _load_pointer().expect_youtube()
+                        print("Open youtube ON")
+                        speak(line("app_youtube"))
+                    else:
+                        print("Open youtube: missing")
+                        speak(line("app_missing", name="YouTube"))
                     continue
                 app_guess = next((guess for guess in guesses if wants_open_app(guess)), None)
                 if app_guess:
@@ -3658,6 +3650,7 @@ _p5_port = None
 _p5_proc = None
 _p5_open = False
 _p5_armed = False
+_p5_listen_at = 0.0
 _p5_crop = None
 _p5_filled = False
 _mouse_was_down = False
@@ -4150,7 +4143,7 @@ def _arm_stipple(reason):
 
 def _open_p5_board(crop):
     """Full-screen still of this crop. The heart waits for a snap or voice."""
-    global _p5_open, _p5_proc, _p5_crop, _p5_filled, _p5_armed, _preview_cam_logged
+    global _p5_open, _p5_proc, _p5_crop, _p5_filled, _p5_armed, _preview_cam_logged, _p5_listen_at
     _preview_cam_logged = False
     folder = Path(os.environ.get("LOCALAPPDATA", "")) / "asmamir"
     folder.mkdir(parents=True, exist_ok=True)
@@ -4164,6 +4157,7 @@ def _open_p5_board(crop):
     _p5_filled = False
     _p5_armed = False
     _anime_cam_hold = False
+    _p5_listen_at = time.time() + 1.2
     port = _ensure_p5_server()
     browser = _browser_exe()
     if port is None or browser is None:
@@ -4551,7 +4545,7 @@ def _show_anime_camera(frame):
             print("Anime camera on for record snap.", flush=True)
         else:
             print("Anime camera on. The still is waiting.", flush=True)
-    cv2.imshow(ANIME_CAM, frame)
+    cv2.imshow(ANIME_CAM, np.ascontiguousarray(frame))
     try:
         cv2.setWindowProperty(ANIME_CAM, cv2.WND_PROP_TOPMOST, 1)
     except Exception:
@@ -4604,7 +4598,18 @@ def _hide_anime_camera(force=False):
 
 def _present_anime():
     """Show the screen, then hold the dragged photo until a snap or voice."""
-    global anime_pending, _reselect_drag, _select_warned, _select_shot, _select_origin
+    global anime_pending, _reselect_drag, _select_warned, _select_shot, _select_origin, _p5_armed, _anime_cam_hold
+    if anime_pending:
+        anime_pending = None
+        _p5_armed = False
+        _anime_cam_hold = False
+        _load_anime_mod().reset()
+        _close_select()
+        _close_p5_board()
+        _hide_anime_camera(force=True)
+        _reselect_drag = False
+        _select_warned = False
+        print("Anime: drag a rectangle.")
     if _p5_armed:
         _hide_anime_camera()
         _ui_key(cv2.waitKey(1) & 0xFF)
@@ -4616,14 +4621,6 @@ def _present_anime():
         x, y = _cursor_xy()
         _select_mouse(cv2.EVENT_LBUTTONUP, x, y, 0, None)
         _reselect_drag = False
-    if anime_pending:
-        anime_pending = None
-        _load_anime_mod().reset()
-        _close_select()
-        _close_p5_board()
-        _reselect_drag = False
-        _select_warned = False
-        print("Anime: drag a rectangle.")
     if _p5_open and _select_shot is None:
         if not _p5_armed:
             try:
@@ -4776,10 +4773,29 @@ def _has_picture(frame):
 def _arm_capture(capture):
     capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     try:
+        capture.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+    except Exception:
+        pass
+    try:
         capture.set(cv2.CAP_PROP_CONVERT_RGB, 1)
     except Exception:
         pass
     capture.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.75)
+
+
+def _camera_bgr(frame):
+    """A private BGR copy. DirectShow reuses its buffer, which paints as color static."""
+    if frame is None or getattr(frame, "size", 0) == 0:
+        return None
+    if frame.ndim == 2:
+        frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+    elif frame.ndim == 3 and frame.shape[2] == 4:
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+    elif frame.ndim == 3 and frame.shape[2] == 2:
+        frame = cv2.cvtColor(frame, cv2.COLOR_YUV2BGR_YUY2)
+    elif frame.ndim != 3 or frame.shape[2] != 3:
+        return None
+    return np.ascontiguousarray(frame)
 
 
 def _probe(index, backend, backend_name):
@@ -5156,10 +5172,12 @@ def _watch_wake_snap(preview=False):
         time.sleep(0.03)
         return False
     try:
-        if frame.ndim == 2:
-            frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-        elif frame.ndim == 3 and frame.shape[2] == 4:
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+        if frame.ndim == 2 or (frame.ndim == 3 and frame.shape[2] != 3):
+            frame = _camera_bgr(frame)
+        else:
+            frame = np.ascontiguousarray(frame)
+        if frame is None:
+            return False
         frame = cv2.flip(frame, 1)
         if _p5_armed or _anime_cam_hold:
             _hide_anime_camera(force=True)
@@ -5596,7 +5614,9 @@ while True:
             _park_for_anime()
         else:
             _unpark_after_anime()
-            cv2.imshow(WINDOW, frame)
+            if _standby_parked:
+                _restore_standby_window()
+            cv2.imshow(WINDOW, np.ascontiguousarray(frame))
     if anime_now and (_anime_board_open or (_capture_frame is not None and _capture_frame.visible)):
         _pin_anime_board()
     if shutdown_requested:

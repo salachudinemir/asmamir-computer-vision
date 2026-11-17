@@ -132,7 +132,7 @@ def wants(command):
     rest_join = " ".join(rest)
     compact = rest_join.replace(" ", "")
     if "youtube" in compact or _has_pair(rest, "you", "tube"):
-        return YOUTUBE
+        return None
     if "excel" in rest:
         return EXCEL
     if (

@@ -40,7 +40,7 @@ Dance names are whole phrases only:
 
 ## Anime
 
-Selection phrases are whole transcripts: `anime`, `stipple`, `stipple anime`, `stippled anime`, `stipple art`, or only `art`.
+Selection is the whole phrase `anime mode`. A bare `anime` does not open it.
 
 After the drag, the still is held. `Anime camera` is an OpenCV window. It is created on the window thread and only while the photo is waiting or `record snap` is in progress. `cv2` calls from the voice thread are not used to close it, because that froze the window. When the fill starts, the window thread hides and destroys it and then only pumps messages until the freeze ends.
 
@@ -52,7 +52,7 @@ Fill triggers:
 
 `web/anime_board.html` reveals dots from the center for 10 seconds (`REVEAL_MS = 10000`). A resize after start does not clear the ink. The finished plate is held.
 
-`restart anime` sets a flag that the window thread handles: close the board and the camera, clear the old selection, and open a new drag. `standby`, `stop anime`, and `stop stipple art` close the p5 browser by window title (`Anime stipple`, including the Edge InPrivate suffix) and by the `anime-p5-profile` command line, then request the sit-up.
+`restart anime` and `restart anime mode` set a flag that the window thread handles: close the board and the camera, clear the old selection, and open a new drag. They do not quit and do not go to the sit-up. `standby`, `standby mode`, `stop anime`, `stop stipple`, `stop stipple art`, `stop art`, and `berhenti anime` close the p5 browser by window title (`Anime stipple`, including the Edge InPrivate suffix) and by the `anime-p5-profile` command line, then request the sit-up.
 
 ## Record snap
 
@@ -73,11 +73,11 @@ The other scripts open their own window: `aqua_mandala`, `botanical_lily`, `butt
 
 ## Hand bloom
 
-The whole phrase `hand bloom` is kept before chat. `web/hand_bloom.py` draws on the frame from the webcam `app.py` already opened. It does not open a second camera. Thumb tip to index tip sets the pinch distance. That distance grows a blue stem from each fingertip and, once the stem has grown, a five-petal flower. The overlay prints Grow and Bloom. The mode hides the sit-up, anime, dance, YouTube, and canvas surfaces. `standby` clears the mode and returns to the sit-up. The process keeps running.
+The whole phrase `hand bloom mode` is kept before the anime grammar. `web/hand_bloom.py` draws on the frame from the webcam `app.py` already opened. It does not open a second camera. Thumb tip to index tip sets the pinch distance. That distance grows a blue stem from each fingertip and, once the stem has grown, a five-petal flower. The overlay prints Grow and Bloom. The mode hides the sit-up, anime, dance, YouTube, and canvas surfaces. `standby` and `standby mode` clear the mode and return to the sit-up. The process keeps running.
 
 ## YouTube finger cursor
 
-`open youtube` calls `expect_youtube()` before the browser title exists, so the pointer is armed on that phrase. The standby loop then hides the sit-up window with `ShowWindow` and does not call the fullscreen hologram paint while that cursor is active. After `waitKey`, the Windows cursor is shown again. The index tip calls `SetCursorPos`. A pinch sends a left click. Two fingers send a wheel. When the scan no longer sees a visible YouTube title, and the short expect window has elapsed, the cursor disarms unless voice armed it, and the sit-up window is shown again.
+The whole phrase `youtube mode` calls `expect_youtube()` before the browser title exists, so the pointer is armed on that phrase. `open youtube` does not. The standby loop then hides the sit-up window with `ShowWindow` and does not call the fullscreen hologram paint while that cursor is active. After `waitKey`, the Windows cursor is shown again. The index tip calls `SetCursorPos`. A pinch sends a left click. Two fingers send a wheel. When the scan no longer sees a visible YouTube title, and the short expect window has elapsed, the cursor disarms unless `mouse mode` armed it, and the sit-up window is shown again.
 
 ## Quit and standby grammar
 

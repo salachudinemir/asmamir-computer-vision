@@ -25,16 +25,13 @@ This document records the behavior implemented in `app.py` and the modules it ca
 1. The figure is Mixamo Arissa, drawn smaller, face toward the camera.
 2. The sit-up clip plays once, then holds.
 3. A pinch plus the other index orbits the figure.
-4. The whole phrase `twerk` plays `web/hologram/asmamir_dancing_twerk.fbx`.
-5. The whole phrase `rumba` plays `web/hologram/asmamir_rumba_dancing.fbx`.
-6. The whole phrase `salsa` plays `web/hologram/asmamir_salsa_dancing.fbx`.
-7. The whole phrase `dance` cycles those three clips.
-8. The whole phrase `stop dance`, or a transcript that is only `standby` or only `stand by` (either one repeated), returns to the sit-up.
-9. The FBX files are not in git. Each operator supplies them.
+4. The whole phrase `dance mode` cycles those three clips. `twerk`, `rumba`, and `salsa` do not start a mode.
+5. The whole phrase `stop dance`, or a transcript that is only `standby`, `stand by` (either one repeated), or `standby mode`, returns to the sit-up.
+6. The FBX files are not in git. Each operator supplies them.
 
 ## 4. Anime
 
-1. The whole phrase `anime`, `stipple`, `stipple anime`, `stippled anime`, `stipple art`, or a transcript that is only `art` opens selection. A longer sentence does not.
+1. The whole phrase `anime mode` opens selection. A bare `anime`, or a longer sentence, does not.
 2. The operator drags a rectangle on the captured screen. The still photo holds. The heart does not start on mouse release or on the pose already in frame.
 3. The window titled `Anime camera` is shown only while that photo is waiting, or while `record snap` is recording. The window thread paints it. The voice thread does not destroy OpenCV windows.
 4. The moment the 10 second fill starts, that window is hidden and destroyed. It stays closed through the freeze. It opens again only for a new waiting photo or a new recording.
@@ -42,8 +39,8 @@ This document records the behavior implemented in `app.py` and the modules it ca
 6. The fill starts if the live thumb-to-middle series matches the saved motion: open near 1.3, then one step close to about 0.86, as in `snap-1.motion`. The score is logged. A finger that is already closed when it enters the frame does not match.
 7. The fill starts if the whole transcript is `start`, `capture`, `start capture`, or `take screenshot`.
 8. The heart grows from the center for 10 seconds. Resize during the fill does not clear the dots. After 10 seconds the color picture freezes.
-9. The whole phrase `restart anime` closes the animation window and the Anime camera, then opens image selection again. It does not exit and does not stop at the sit-up.
-10. The whole phrase `standby` (repeated still counts), `stop anime`, or `stop stipple art` closes the animation, the Anime camera, and any Edge window whose title contains `Anime stipple`, then returns to the sit-up. The app keeps running.
+9. The whole phrase `restart anime` or `restart anime mode` closes the held picture and the Anime camera, then opens image selection again. It does not exit and does not stop at the sit-up.
+10. The whole phrase `standby`, `standby mode`, `stop anime`, `stop stipple`, `stop stipple art`, `stop art`, or `berhenti anime` closes the animation, the Anime camera, and any Edge window whose title contains `Anime stipple`, then returns to the sit-up. The app keeps running.
 
 ## 5. Record snap
 
@@ -53,10 +50,10 @@ This document records the behavior implemented in `app.py` and the modules it ca
 
 ## 6. YouTube finger cursor
 
-1. The whole phrase `open youtube` opens the site and arms the index-finger cursor immediately. Arming does not wait for a window title that already contains YouTube.
+1. The whole phrase `youtube mode` opens the site and arms the index-finger cursor immediately. Arming does not wait for a window title that already contains YouTube. `open youtube` and a bare `youtube` do not.
 2. The sit-up hologram window is hidden and left off the desktop. It is not returned to fullscreen on each frame, so it does not hide the mouse.
 3. YouTube stays in front. The index finger moves the Windows cursor. A pinch clicks. Two fingers scroll. The Windows cursor is shown again after each frame.
-4. Closing the YouTube window disarms that cursor and brings the sit-up figure back, unless the operator armed the cursor by voice (`mouse` or `kursor`) and has not said `stop mouse` or `stop kursor`.
+4. Closing the YouTube window disarms that cursor and brings the sit-up figure back, unless the operator armed the cursor with `mouse mode` and has not said `stop mouse` or `stop kursor`. `standby` and `standby mode` also return to the sit-up.
 
 ## 7. Quit
 
@@ -68,11 +65,11 @@ A longer sentence that merely contains those words does not quit.
 
 ## 8. Hand bloom
 
-1. The whole phrase `hand bloom` turns the mode on. A longer sentence that merely contains those words does not.
+1. The whole phrase `hand bloom mode` turns the mode on. `hand bloom`, `hand blossom`, and a longer sentence do not. It does not open anime.
 2. Flowers are drawn on the camera frame the assistant already captures. A second webcam is not opened.
 3. The pinch distance between the thumb tip and the index tip grows a blue stem from each fingertip. A wider pinch raises the grow value. A closer pinch raises the bloom value. When the stem has grown, a filled flower with five petals is drawn at the tip. The frame shows Grow and Bloom.
 4. Entering the mode leaves anime, dance, YouTube, canvas, and the sit-up hologram so they do not cover the camera. The camera window stays up while the mode is on.
-5. `standby`, including a repeated standby phrase, and the existing stop phrases that return to the sit-up leave hand bloom and show the sit-up again. The app keeps running.
+5. `standby` and `standby mode` leave hand bloom and show the sit-up again. The app keeps running.
 6. Shutdown and goodbye still quit only from standby.
 
 ## 9. Standalone animation folder

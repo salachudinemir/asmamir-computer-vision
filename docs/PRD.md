@@ -15,11 +15,11 @@ Chat is Hermes at `http://127.0.0.1:8642`, then Ollama at `http://127.0.0.1:1143
 - Wake with one thumb-to-middle snap, or the whole phrase `asmamir`. One clap does nothing.
 - Standby shows Mixamo Arissa, smaller, face toward the camera. The sit-up plays once, then holds.
 - A pinch plus the other index orbits the figure.
-- Whole-phrase dance names open one file: `twerk` → `web/hologram/asmamir_dancing_twerk.fbx`, `rumba` → `asmamir_rumba_dancing.fbx`, `salsa` → `asmamir_salsa_dancing.fbx`. The single word `dance` cycles those three. `stop dance`, or a transcript that is only `standby` (one or more times), returns to the sit-up.
+- The whole phrase `dance mode` cycles `web/hologram/asmamir_dancing_twerk.fbx`, `asmamir_rumba_dancing.fbx`, and `asmamir_salsa_dancing.fbx`. Bare `twerk`, `rumba`, `salsa`, and `dance` do not start a mode. `stop dance`, or a transcript that is only `standby` or `standby mode`, returns to the sit-up.
 
 ## Anime
 
-Whole phrase only: `anime`, `stipple`, `stipple anime`, `stippled anime`, `stipple art`, or a transcript that is only `art`. The primary screen is captured. A left-button drag selects a rectangle. The still photo holds.
+Whole phrase only: `anime mode`. The primary screen is captured. A left-button drag selects a rectangle. The still photo holds.
 
 The OpenCV window titled `Anime camera` appears only while that photo is waiting for a command, or while `record snap` is recording. It is destroyed on the same turn the fill starts and stays closed through the freeze.
 
@@ -33,13 +33,13 @@ A longer sentence that merely contains those words does not start the fill. A fi
 
 The heart grows from the center for 10 seconds. The finished color picture then freezes.
 
-`restart anime` (whole phrase) closes the held picture and the Anime camera, then opens image selection again. The app does not exit and does not stop at the sit-up.
+`restart anime` and `restart anime mode` (whole phrases) close the held picture and the Anime camera, then open image selection again. The app does not exit and does not stop at the sit-up.
 
-`standby`, `stop anime`, and `stop stipple art` close the animation, the Anime camera, and the Edge page whose title contains `Anime stipple`, then return to the sit-up. The app keeps running.
+`standby`, `standby mode`, `stop anime`, `stop stipple`, `stop stipple art`, `stop art`, and `berhenti anime` close the animation, the Anime camera, and the Edge page whose title contains `Anime stipple`, then return to the sit-up. The app keeps running.
 
 ## YouTube finger cursor
 
-The whole phrase `open youtube` opens the site and arms the index-finger cursor immediately. It does not wait for a window title that already contains YouTube. The sit-up hologram window is hidden and left off screen so it does not go fullscreen every frame and hide the mouse. YouTube stays in front. The index finger moves the Windows cursor, a pinch clicks, and two fingers scroll. The Windows cursor is shown again after each frame. Closing YouTube brings the sit-up figure back. A voice arm (`mouse` or `kursor`) stays on after YouTube closes until `stop mouse` or `stop kursor`.
+The whole phrase `youtube mode` opens the site and arms the index-finger cursor immediately. `open youtube` does not. It does not wait for a window title that already contains YouTube. The sit-up hologram window is hidden and left off screen so it does not go fullscreen every frame and hide the mouse. YouTube stays in front. The index finger moves the Windows cursor, a pinch clicks, and two fingers scroll. The Windows cursor is shown again after each frame. Closing YouTube brings the sit-up figure back. A voice arm (`mouse mode`) stays on after YouTube closes until `stop mouse` or `stop kursor`.
 
 ## Record snap and shutdown
 
@@ -51,7 +51,7 @@ From standby only, the whole phrase `shutdown`, `shut down`, `shutdown and quit`
 
 ## Hand bloom
 
-The whole phrase `hand bloom` turns the mode on. A longer sentence that merely contains those words does not. Flowers are drawn on the camera the assistant already uses. No second webcam is opened. A pinch grows blue stems from the fingertips and opens a five-petal bloom. The picture shows Grow and Bloom. Anime, dance, YouTube, canvas, and the sit-up hologram are left so they do not cover that camera. `standby` leaves the mode and returns to the sit-up. The app keeps running.
+The whole phrase `hand bloom mode` turns the mode on. `hand bloom` and `hand blossom` do not, and the phrase does not open anime. Flowers are drawn on the camera the assistant already uses. No second webcam is opened. A pinch grows blue stems from the fingertips and opens a five-petal bloom. The picture shows Grow and Bloom. Anime, dance, YouTube, canvas, and the sit-up hologram are left so they do not cover that camera. `standby` and `standby mode` leave the mode and return to the sit-up. The app keeps running.
 
 ## Standalone animations
 

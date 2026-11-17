@@ -105,7 +105,7 @@ def youtube_showing():
 
 def wants_on(command):
     text = " ".join(command.replace("-", " ").lower().split())
-    return text in {"mouse", "kursor", "hand mouse", "gerakkan mouse", "gerakkan kursor"}
+    return text == "mouse mode"
 
 
 def wants_off(command):

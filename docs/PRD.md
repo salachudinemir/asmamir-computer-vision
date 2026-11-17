@@ -47,7 +47,7 @@ The whole phrase `record snap` or `records snap` saves `models/snaps/snap-N.wav`
 
 A transcript that is only the word `standby`, repeated any number of times, or only `stand by` repeated, closes anime and returns to the sit-up. It is not rewritten and is not sent to chat.
 
-From standby only, the whole phrase `shutdown`, `shut down`, `shutdown and quit`, `shut down and quit`, `quit`, `exit`, `goodbye`, or `good bye` exits the process. From any other mode the same phrase returns to the sit-up and leaves the app running. Say it again from standby to quit.
+From standby only, including after `standby mode`, the whole phrase `shutdown`, `shut down`, `shutdown and quit`, `shut down and quit`, `quit`, `exit`, `goodbye`, or `good bye` exits the process. A mode phrase does not replace one of these. From any other mode the same phrase returns to the sit-up and leaves the app running. Say it again from standby to quit. If stopping a companion fails, the process still exits.
 
 ## Hand bloom
 

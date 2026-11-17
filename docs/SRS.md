@@ -57,11 +57,11 @@ This document records the behavior implemented in `app.py` and the modules it ca
 
 ## 7. Quit
 
-From standby only, the whole phrase `shutdown`, `shut down`, `shutdown and quit`, `shut down and quit`, `quit`, `exit`, `goodbye`, or `good bye` exits the process and stops the companion processes in section 1.
+From standby only, including after `standby mode`, the whole phrase `shutdown`, `shut down`, `shutdown and quit`, `shut down and quit`, `quit`, `exit`, `goodbye`, or `good bye` exits the process and stops the companion processes in section 1. A mode phrase does not replace one of these. If stopping a companion fails, the process still exits.
 
 From any other mode, including anime, dance, and asleep, the same phrase returns to the sit-up and leaves `app.py` running. A second saying from standby quits.
 
-A longer sentence that merely contains those words does not quit.
+A longer sentence that merely contains those words does not quit. A stale stipple flag does not count as another mode once the sit-up is showing.
 
 ## 8. Hand bloom
 

@@ -93,6 +93,6 @@ Standby is recognized from the open transcript when every word is `standby`, or 
 | Ollama `127.0.0.1:11434` | Second chat and look endpoint. `app.py` runs `ollama serve` if the port is quiet. |
 | `ollama launch dsh` | Deepseek harness. Not the chat path. Port 3080 is not bound by the login script. |
 
-`_stop_chat_companions` runs from `finish_shutdown` and from the hologram `atexit` path. It stops listeners on 11434, 8642, and 3080, and processes whose command line is `ollama serve`, `ollama launch dsh`, or the Hermes gateway.
+`_stop_chat_companions` runs from `finish_shutdown` and from the hologram `atexit` path. It stops listeners on 11434, 8642, and 3080, and processes whose command line is `ollama serve`, `ollama launch dsh`, or the Hermes gateway. `finish_shutdown` still exits if that stop raises. `shutdown and quit` and the other whole-phrase quit lines are kept before any `mode` phrase. They exit only when the sit-up is showing, including after `standby mode`. From another mode they return to the sit-up.
 
 The login script’s real order is Hermes health, then `start_dsh.ps1`, then one `app.py` if none is running. The repository does not install the scheduled task.

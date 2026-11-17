@@ -1468,8 +1468,9 @@ def transcripts_from(audio):
         if texts and all(_whole_phrase(text) in _RECORD_EXACT for text in texts):
             print("Record snap kept")
             return ["record snap"]
-        if texts and all(_whole_phrase(text) in _QUIT_EXACT for text in texts):
-            phrase = _whole_phrase(texts[0])
+        quit_text = next((text for text in texts if _whole_phrase(text) in _QUIT_EXACT), "")
+        if quit_text:
+            phrase = _whole_phrase(quit_text)
             print(f"Shutdown phrase kept: {phrase}")
             return [phrase]
         if texts and all(_whole_phrase(text) in _DANCE_EXACT for text in texts):
@@ -1535,6 +1536,11 @@ def transcripts_from(audio):
             guesses.append(english)
         return guesses
     open_first = _whole_phrase(_vosk_text(audio, None))
+    quit_first = _whole_phrase(_vosk_phrase(audio, QUIT_PHRASES))
+    if open_first in _QUIT_EXACT or (quit_first in _QUIT_EXACT and open_first in {"", quit_first}):
+        phrase = open_first if open_first in _QUIT_EXACT else quit_first
+        print(f"Shutdown phrase kept: {phrase}")
+        return [phrase]
     if open_first == "hand bloom mode":
         print("Hand bloom kept: hand bloom mode")
         return ["hand bloom mode"]
@@ -2755,7 +2761,10 @@ def finish_shutdown():
         cv2.waitKey(1)
     except Exception:
         pass
-    _stop_chat_companions()
+    try:
+        _stop_chat_companions()
+    except Exception as exc:
+        print(f"Companion stop did not finish: {exc}", flush=True)
     # sys.exit runs GC, and ufbx's destructor access-violates after skinning.
     os._exit(0)
 
@@ -3157,8 +3166,8 @@ def _record_next_snap(source):
 
 
 def _on_standby():
-    """Sit-up hologram only. Anime, dance, fog, canvas, and the other modes are not this."""
-    if not _standby_visible or _vision_modes_on() or _p5_open:
+    """Sit-up hologram only, including after standby mode. A leftover stipple flag is not another mode."""
+    if not _standby_visible or _vision_modes_on():
         return False
     try:
         from web import hologram_dance

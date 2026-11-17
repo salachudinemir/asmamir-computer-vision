@@ -151,6 +151,8 @@ def _pump():
 
 def _context(width, height):
     global _hwnd, _dc, _ctx, _size
+    if _user32 is None or _kernel32 is None or _gdi32 is None or _gl is None:
+        raise RuntimeError("orbit window")
     if _ctx and _size == (width, height):
         return
     if _hwnd is None:
@@ -220,13 +222,18 @@ def _gpu(pos, col):
         )
         if not _gen_buffers or not _bind_buffer or not _buffer_data:
             return False
+    gen_buffers = _gen_buffers
+    bind_buffer = _bind_buffer
+    buffer_data = _buffer_data
+    if gen_buffers is None or bind_buffer is None or buffer_data is None:
+        return False
     ids = (ctypes.c_uint * 2)()
-    _gen_buffers(2, ids)
-    _bind_buffer(0x8892, ids[0])
-    _buffer_data(0x8892, pos.nbytes, pos.ctypes.data_as(ctypes.c_void_p), 0x88E4)
-    _bind_buffer(0x8892, ids[1])
-    _buffer_data(0x8892, col.nbytes, col.ctypes.data_as(ctypes.c_void_p), 0x88E4)
-    _bind_buffer(0x8892, 0)
+    gen_buffers(2, ids)
+    bind_buffer(0x8892, int(ids[0]))
+    buffer_data(0x8892, pos.nbytes, pos.ctypes.data_as(ctypes.c_void_p), 0x88E4)
+    bind_buffer(0x8892, int(ids[1]))
+    buffer_data(0x8892, col.nbytes, col.ctypes.data_as(ctypes.c_void_p), 0x88E4)
+    bind_buffer(0x8892, 0)
     _buffers = (int(ids[0]), int(ids[1]))
     _uploaded = len(pos)
     return True

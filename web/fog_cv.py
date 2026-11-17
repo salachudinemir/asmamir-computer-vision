@@ -148,8 +148,8 @@ def _face_mesh():
     if _face is not None:
         return _face
     try:
-        import mediapipe as mp
-        _face = mp.solutions.face_mesh.FaceMesh(
+        from mediapipe.python.solutions.face_mesh import FaceMesh
+        _face = FaceMesh(
             static_image_mode=False,
             max_num_faces=1,
             refine_landmarks=True,
@@ -165,7 +165,7 @@ def _face_mesh():
 def _mouth_breath(frame, mask):
     """Open mouth close to the lens fogs the whole glass quickly."""
     mesh = _face_mesh()
-    if not mesh:
+    if mesh is None or mesh is False or mask is None:
         return
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     rgb.flags.writeable = False
@@ -221,6 +221,8 @@ def draw_fog_overlay(frame, results):
     _ensure(height, width)
     fog = _fog_layer(frame)
     mask = _mask
+    if mask is None:
+        return frame
     _mouth_breath(frame, mask)
     hand = _one_hand(results)
     pose = _classify(hand)

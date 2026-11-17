@@ -181,7 +181,7 @@ def _photo_box(luma):
         return None
     bar = np.abs(stage - level) <= 0.07
     content = np.where(bar, 0, 1).astype(np.uint8)
-    count, _labels, stats, _centroids = cv2.connectedComponentsWithStats(content, 8)
+    count, _labels, stats, _centroids = cv2.connectedComponentsWithStats(content, connectivity=8)
     best = None
     for index in range(1, count):
         x, y, box_w, box_h, area = (int(v) for v in stats[index])
@@ -387,6 +387,8 @@ def draw_anime_overlay(frame, _results=None):
         x = min(max(0, x), _canvas.shape[1] - 1)
         y = min(max(0, y), _canvas.shape[0] - 1)
         radius = int(_radii[i]) if _radii is not None else RADIUS_START
+        if _colors is None:
+            continue
         color = tuple(int(c) for c in _colors[i])
         cv2.circle(_canvas, (x, y), radius, color, -1, lineType=cv2.LINE_8)
     _drawn = target

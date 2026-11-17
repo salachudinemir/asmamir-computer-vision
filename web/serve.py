@@ -56,7 +56,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache")
         super().end_headers()
 
-    def log_message(self, fmt, *args):
+    def log_message(self, format, *args):
         print(f"[{self.log_date_time_string()}] {fmt % args}")
 
 

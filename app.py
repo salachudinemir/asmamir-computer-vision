@@ -2814,11 +2814,15 @@ def finish_shutdown():
     # sys.exit runs GC, and ufbx's destructor access-violates after skinning.
     os._exit(0)
 
+_companions_stopped = False
+
+
 def _stop_chat_companions():
     """Ollama, Hermes, and the Deepseek harness run only while this app does."""
-    if getattr(_stop_chat_companions, "done", False):
+    global _companions_stopped
+    if _companions_stopped:
         return
-    _stop_chat_companions.done = True
+    _companions_stopped = True
     print("Stopping Ollama, Hermes, and the Deepseek harness.", flush=True)
     subprocess.run(
         [
@@ -3059,15 +3063,19 @@ def _finish_snap_save():
     global _snap_save
     job = _snap_save
     _snap_save = None
+    if not isinstance(job, dict):
+        return
     writer = job.get("writer")
     if writer is not None:
         writer.release()
-    video = job["video"]
+    video = job.get("video")
     if job.get("wrote"):
         print(f"Saved {video}.", flush=True)
     elif not job.get("frames"):
         print(f"No camera frames for {video}.", flush=True)
-    number = job["number"]
+    number = job.get("number")
+    if not isinstance(number, int):
+        return
     if number < 5:
         print(f"Say record snap, then snap once, for snap-{number + 1}.mp4.", flush=True)
     else:
@@ -3108,7 +3116,7 @@ def _pump_snap_save():
     if writer is None:
         height, width = frames[0].shape[:2]
         job["size"] = (width, height)
-        writer = cv2.VideoWriter(str(job["video"]), cv2.VideoWriter_fourcc(*"mp4v"), 10, (width, height))
+        writer = cv2.VideoWriter(str(job["video"]), cv2.VideoWriter.fourcc(*"mp4v"), 10, (width, height))
         job["writer"] = writer
         if not writer.isOpened():
             for index, frame in enumerate(frames, start=1):
@@ -4143,7 +4151,7 @@ class _AnimeBoardHandler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
 
-    def log_message(self, _fmt, *_args):
+    def log_message(self, format, *args):
         return
 
     def _send(self, path, content_type, nostore=False):
@@ -4831,7 +4839,7 @@ def _has_picture(frame):
 def _arm_capture(capture):
     capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     try:
-        capture.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+        capture.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc(*"MJPG"))
     except Exception:
         pass
     try:

@@ -57,7 +57,7 @@ _clients = set()
 _clients_lock = threading.Lock()
 _opened_browser = False
 _pinch_on = [False, False]
-_pinch_origin = [None, None]
+_pinch_origin: list[tuple[float, float] | None] = [None, None]
 _pinch_dragged = [False, False]
 _dual_was = False
 _peace_was = False
@@ -83,7 +83,7 @@ class _Static(SimpleHTTPRequestHandler):
             return _MIME[ext]
         return super().guess_type(path)
 
-    def log_message(self, fmt, *args):
+    def log_message(self, format, *args):
         print(f"[deagle-http] {fmt % args}")
 
 
@@ -135,7 +135,7 @@ def stop_servers():
     if _ws_server is not None:
         _close_socket(_ws_server)
     http = _http
-    if http is not None and http is not True:
+    if http is not None and http is not True and http is not False:
         try:
             http.server_close()
         except Exception:

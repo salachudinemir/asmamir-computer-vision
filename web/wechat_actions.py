@@ -170,7 +170,10 @@ def _invoke_call(hwnd, kind):
 
         comtypes.CoInitialize()
         GetModule("UIAutomationCore.dll")
-        import comtypes.gen.UIAutomationClient as uia_mod
+        try:
+            import comtypes.gen.UIAutomationClient as uia_mod
+        except ImportError:
+            return
 
         uia = CreateObject(uia_mod.CUIAutomation)
         root = uia.ElementFromHandle(hwnd)

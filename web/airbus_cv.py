@@ -60,7 +60,7 @@ _clients = set()
 _clients_lock = threading.Lock()
 _opened_browser = False
 _pinch_on = [False, False]
-_pinch_origin = [None, None]
+_pinch_origin: list[tuple[float, float] | None] = [None, None]
 _pinch_dragged = [False, False]
 _dual_was = False
 _peace_was = False
@@ -247,7 +247,7 @@ class _Static(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache")
         super().end_headers()
 
-    def log_message(self, fmt, *args):
+    def log_message(self, format, *args):
         print(f"[airbus-http] {fmt % args}")
 
 

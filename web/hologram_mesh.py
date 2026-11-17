@@ -337,11 +337,12 @@ def _face_colors(geom, faces):
     uv = np.asarray(getattr(visual, "uv", [])) if visual is not None else np.empty((0, 2))
     image = _texture(visual)
     if image is not None and len(uv) > int(faces.max()):
+        faces = np.asarray(faces, dtype=np.intp)
         sample = uv[faces].mean(axis=1)
         height, width = image.shape[:2]
         x = np.clip((sample[:, 0] * (width - 1)).astype(np.int32), 0, width - 1)
         y = np.clip(((1.0 - sample[:, 1]) * (height - 1)).astype(np.int32), 0, height - 1)
-        rgb = image[y, x]
+        rgb = image[np.asarray(y, dtype=np.intp), np.asarray(x, dtype=np.intp)]
         return np.ascontiguousarray(rgb[:, ::-1])
     return np.full((len(faces), 3), (186, 196, 248), np.uint8)
 

@@ -187,7 +187,7 @@ def _paint_polygon(frame, pts, filtro):
     if bw <= 2 or bh <= 2:
         return
     mask = np.zeros((h, w), dtype=np.uint8)
-    cv2.fillPoly(mask, [poly], 255)
+    cv2.fillPoly(mask, [poly], (255,))
     mask_roi = mask[y : y + bh, x : x + bw]
     roi = frame[y : y + bh, x : x + bw]
     filtered = filtro(roi)

@@ -79,16 +79,15 @@ The same process can also count fingers, read a page, apply camera filters, and 
 
 ## Standalone animations
 
-`animation/` is not started by a voice command. From the project folder:
+`animation/` is not started by a voice command. From the project folder, `python -m animation.<name>` or `python .\animation\<file>.py` runs one script. The shareable scripts are `aqua_mandala`, `ascii_reveal`, `botanical_lily`, `butterfly_curve`, `clover_art`, `cosmic_bloom`, `flower`, `make_a_wish`, `math_plate`, `neon_thread_heart`, `radar_scanner`, `rose_art`, `spiderman_particles`, `stippling_art`, and `string_art`.
 
 ```bat
 python -m animation.ascii_reveal --image path\to\image.jpg --out animation\reveal.mp4
-python -m animation.cosmic_bloom
-python -m animation.neon_thread_heart
-python -m animation.aqua_mandala
+python -m animation.string_art
+python -m animation.stippling_art
 ```
 
-`ascii_reveal` writes an mp4. The other three open a window and wait until it closes. Generated mp4 files are not committed.
+`ascii_reveal` writes an mp4. The others open a window. `stippling_art` expects a local `monalisa.jpg` next to the script, and that image is not committed. Generated mp4 files are not committed.
 
 ## License
 

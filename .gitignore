@@ -24,3 +24,7 @@ web/airbus/
 web/deagle/
 *.log
 *.mp4
+.vscode/
+*.lnk
+*.lnk.not-startup
+animation/monalisa.jpg

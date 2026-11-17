@@ -261,8 +261,12 @@ class RegionFrame:
             raise_topmost(self._user32, self.hwnd)
 
     def close(self):
-        user32 = _user32_dll(self._user32)
-        gdi32 = _gdi32_dll(self._gdi32)
+        user32 = self._user32
+        gdi32 = self._gdi32
+        if user32 is None or gdi32 is None:
+            self.hwnd = 0
+            self.visible = False
+            return
         _bind_handles(user32, gdi32)
         if self._hdc_mem and self._old:
             gdi32.SelectObject(self._hdc_mem, self._old)
@@ -284,6 +288,8 @@ class RegionFrame:
 
     def _create(self, left, top, width, height):
         user32 = self._user32
+        if user32 is None:
+            return 0
         create = user32.CreateWindowExW
         create.restype = ctypes.c_void_p
         create.argtypes = [
@@ -307,6 +313,8 @@ class RegionFrame:
     def _paint(self, left, top, width, height):
         user32 = self._user32
         gdi32 = self._gdi32
+        if user32 is None or gdi32 is None:
+            return
         _bind_handles(user32, gdi32)
         pixels = np.ascontiguousarray(border_bgra(width, height))
         if self._hdc_mem and self._old:
@@ -392,7 +400,10 @@ class RegionFrame:
         self.rect = (left, top, width, height)
 
     def _place(self, left, top, width, height):
-        setpos = self._user32.SetWindowPos
+        user32 = self._user32
+        if user32 is None:
+            return
+        setpos = user32.SetWindowPos
         setpos.argtypes = [
             ctypes.c_void_p, ctypes.c_void_p,
             ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,

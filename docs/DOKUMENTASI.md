@@ -69,7 +69,7 @@ From the project folder:
 
 `ascii_reveal` requires `--image` and `--out`. `--seconds` defaults to 9. It writes a cell reveal: a green trail, then the source pixels. A comma or a filesystem path after `-m` is not a module name. Generated mp4 files are gitignored.
 
-The other scripts open their own window: `aqua_mandala`, `botanical_lily`, `butterfly_curve`, `clover_art`, `cosmic_bloom`, `flower`, `make_a_wish`, `math_plate`, `neon_thread_heart`, `radar_scanner`, `rose_art`, and `spiderman_particles`. Closing a turtle window during `aqua_mandala`, `butterfly_curve`, `flower`, `math_plate`, or `neon_thread_heart` is caught and the process exits quietly.
+The other scripts open their own window: `aqua_mandala`, `botanical_lily`, `butterfly_curve`, `clover_art`, `cosmic_bloom`, `flower`, `make_a_wish`, `math_plate`, `neon_thread_heart`, `radar_scanner`, `rose_art`, `spiderman_particles`, `stippling_art`, and `string_art`. Closing a turtle window during `aqua_mandala`, `butterfly_curve`, `flower`, `math_plate`, `neon_thread_heart`, or `string_art` is caught and the process exits quietly. `stippling_art` expects a local image named `monalisa.jpg` next to the script. That image is not part of the repository.
 
 ## Hand bloom
 

@@ -14,7 +14,7 @@ These notes describe the code that is in the repository. They do not record a pe
 | Sit-up, dance files, preview motion | `web/hologram_dance.py` |
 | Exit that also closes the stipple browser | `web/hologram_fbx.py` |
 | Stipple page, 10 second fill | `web/anime_board.html` |
-| Optional logon script | `scripts/start_login.cmd`, `scripts/start_login.ps1`, `scripts/start_dsh.ps1` |
+| Hermes and harness while the app runs | `app.py` (`ensure_hermes`, `ensure_deepseek_harness`, `ensure_ollama`, `_stop_chat_companions`) |
 | Snap samples | `models/snaps/` (gitignored) |
 
 `PRODUCT_NAME` is `Asmamir Computer Vision AI Assistant`. The spoken identity line uses that name. The operator’s name is read from `.env` and is not stored in the repository.
@@ -89,10 +89,10 @@ Standby is recognized from the open transcript when every word is `standby`, or 
 
 | Process | Role |
 | --- | --- |
-| Hermes `127.0.0.1:8642` | First chat and look endpoint. Not started by `app.py`. |
+| Hermes `127.0.0.1:8642` | Started by `app.py` when health is down, through the local gateway launcher. |
+| Deepseek harness | Started by `app.py` through `scripts/start_dsh.cmd` when port 3080 is closed. |
+| Ollama `127.0.0.1:11434` | Started by `app.py` when the port is quiet. |
 | Ollama `127.0.0.1:11434` | Second chat and look endpoint. `app.py` runs `ollama serve` if the port is quiet. |
 | `ollama launch dsh` | Deepseek harness. Not the chat path. Port 3080 is not bound by the login script. |
 
-`_stop_chat_companions` runs from `finish_shutdown` and from the hologram `atexit` path. It stops listeners on 11434, 8642, and 3080, and processes whose command line is `ollama serve`, `ollama launch dsh`, or the Hermes gateway. `finish_shutdown` still exits if that stop raises. `shutdown and quit` and the other whole-phrase quit lines are kept before any `mode` phrase. They exit only when the sit-up is showing, including after `standby mode`. From another mode they return to the sit-up.
-
-The login script’s real order is Hermes health, then `start_dsh.ps1`, then one `app.py` if none is running. The repository does not install the scheduled task.
+`_stop_chat_companions` runs from `finish_shutdown` and from the hologram `atexit` path. It stops listeners on 11434, 8642, and 3080, and processes whose command line is `ollama serve`, `ollama launch dsh`, or the Hermes gateway. `finish_shutdown` still exits if that stop raises. Companions are not started at Windows logon. There is no Startup shortcut. `shutdown and quit` and the other whole-phrase quit lines are kept before any `mode` phrase. They exit only when the sit-up is showing, including after `standby mode`. From another mode they return to the sit-up.

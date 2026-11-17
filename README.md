@@ -43,11 +43,11 @@ Indonesian speech is optional. Place the Piper voice `id_ID-news_tts-medium.onnx
 
 ## Hermes, Ollama, and the Deepseek harness
 
-Chat and “look at this” try Hermes at `http://127.0.0.1:8642` first, then Ollama at `http://127.0.0.1:11434`. The Deepseek harness (`ollama launch dsh`) is not the chat path and does not bind port 3080.
+Chat and “look at this” try Hermes at `http://127.0.0.1:8642` first, then Ollama at `http://127.0.0.1:11434`. The Deepseek harness (`ollama launch dsh`) is not the chat path.
 
-`app.py` starts `ollama serve` when port 11434 is quiet. It does not start the Hermes gateway. `scripts/start_login.cmd` starts Hermes only when `http://127.0.0.1:8642/health` is down and `%LOCALAPPDATA%\hermes\gateway-service\Hermes_Gateway.vbs` exists, then starts the harness only when `ollama launch dsh` is not already running, then starts one `app.py` if none is running. This repository does not register a Windows login task.
+`python app.py` or `python -m app.py` starts the Hermes gateway when health is down, runs `scripts/start_dsh.cmd` when port 3080 is closed, and starts `ollama serve` when port 11434 is quiet. Each one is left alone when it is already up. Windows logon does not start them. This repository does not install a Startup shortcut or a login task.
 
-Those three processes may run only while `python -m app.py` is running. Process exit stops listeners on ports 11434, 8642, and 3080, plus `ollama serve`, `ollama launch dsh`, and the Hermes gateway. If both chat endpoints are down, the app keeps running and skips that sentence.
+Those processes run only while the app is running. Process exit stops listeners on ports 11434, 8642, and 3080, plus `ollama serve`, `ollama launch dsh`, and the Hermes gateway. If both chat endpoints are down, the app keeps running and skips that sentence.
 
 The spoken name is read from `.env`, which is not committed:
 
@@ -62,7 +62,7 @@ When those are empty, the app uses `User` and `friend`. Optional SAPI pronunciat
 venv\Scripts\python.exe app.py
 ```
 
-Task Scheduler is optional and is not registered by this repository. You may point a logon task at `scripts/start_login.cmd` without administrator rights. The script uses the project folder above `scripts`. It checks Hermes at `http://127.0.0.1:8642/health`, starts the local gateway only when health is down and a launcher is present, then runs `scripts/start_dsh.cmd` (`ollama launch dsh` only if that process is not already running), then one `app.py`. It does not open a second camera window.
+Start the assistant only by running that command. A reboot does not start it. The process starts Hermes, the Deepseek harness, and Ollama in the background when they are down, and stops them when it exits. It does not open a second camera window.
 
 ## Commands
 

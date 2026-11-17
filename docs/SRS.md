@@ -80,14 +80,11 @@ A longer sentence that merely contains those words does not quit. A stale stippl
 4. The other scripts open their own window: `aqua_mandala`, `botanical_lily`, `butterfly_curve`, `clover_art`, `cosmic_bloom`, `flower`, `make_a_wish`, `math_plate`, `neon_thread_heart`, `radar_scanner`, `rose_art`, and `spiderman_particles`.
 5. Closing a turtle window while `aqua_mandala`, `butterfly_curve`, `flower`, `math_plate`, or `neon_thread_heart` is drawing ends the script quietly.
 
-## 10. Login script
+## 10. Companions
 
-`scripts/start_login.cmd` is not registered by this repository.
+The operator starts the assistant by running `python app.py` or `python -m app.py`. Windows logon does not start it. This repository does not register a Startup shortcut or a login task.
 
-If an operator runs it:
-
-1. If `http://127.0.0.1:8642/health` is down and `%LOCALAPPDATA%\hermes\gateway-service\Hermes_Gateway.vbs` exists, the script starts that launcher.
-2. `scripts/start_dsh.ps1` runs `ollama launch dsh -y` only when that process is not already running. It does not bind port 3080.
-3. If `app.py` is not already running, the script starts one hidden `app.py`.
-
-`app.py` itself starts `ollama serve` when port 11434 is quiet. It only probes Hermes. It does not start the gateway.
+1. If Hermes health at `http://127.0.0.1:8642/health` is down and the local `Hermes_Gateway.vbs` launcher exists, `app.py` starts that launcher.
+2. If nothing is listening on port 3080, `app.py` runs `scripts/start_dsh.cmd`, which starts `ollama launch dsh` only when that process is not already running.
+3. If port 11434 is quiet, `app.py` starts `ollama serve`.
+4. On process exit the app stops listeners on 11434, 8642, and 3080, and stops `ollama serve`, `ollama launch dsh`, and the Hermes gateway.

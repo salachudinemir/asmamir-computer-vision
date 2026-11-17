@@ -59,9 +59,7 @@ The whole phrase `hand bloom mode` turns the mode on. `hand bloom` and `hand blo
 
 ## Companions
 
-Ollama on port 11434, Hermes on port 8642, and `ollama launch dsh` may run only while `python -m app.py` is running. `app.py` starts `ollama serve` when port 11434 is quiet. It does not start the Hermes gateway. Process exit stops listeners on 11434, 8642, and 3080, and stops `ollama serve`, `ollama launch dsh`, and the Hermes gateway.
-
-`scripts/start_login.cmd` is optional. This repository does not register a Windows login task. If an operator points a logon task at that script, the script checks Hermes health, starts the local gateway only when health is down and `Hermes_Gateway.vbs` is present, runs `scripts/start_dsh.ps1` only when `ollama launch dsh` is not already running, then starts one `app.py` if none is running. Port 3080 is not bound.
+Ollama on port 11434, Hermes on port 8642, and the Deepseek harness may run only while `python app.py` or `python -m app.py` is running. That process starts the Hermes gateway when health is down, runs `scripts/start_dsh.cmd` when port 3080 is closed, and starts `ollama serve` when port 11434 is quiet. Process exit stops listeners on 11434, 8642, and 3080, and stops `ollama serve`, `ollama launch dsh`, and the Hermes gateway. Windows logon does not start them. This repository does not install a Startup shortcut or a login task.
 
 ## Identity
 

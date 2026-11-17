@@ -801,6 +801,15 @@ def hermes_is_up():
         return False
 
 
+def _port_open(port):
+    import socket
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
 def ollama_is_up():
     try:
         urllib.request.urlopen(f"{OLLAMA_HOST}/api/tags", timeout=1)
@@ -876,14 +885,50 @@ def refresh_ollama_models():
     return bool(vision or text)
 
 def ensure_hermes():
-    """Local Hermes OpenAI-compat API at 127.0.0.1:8642. Do not start the gateway from here."""
+    """Start the existing Hermes gateway when this app starts, unless port 8642 is up."""
     if hermes_is_up():
         print(f"Hermes API is up at {HERMES_HOST}/health.")
         if not hermes_api_key():
             print("Hermes API_SERVER_KEY is missing. Chat/look will fall through to Ollama.")
         return True
+    vbs = Path(os.environ.get("LOCALAPPDATA", "")) / "hermes" / "gateway-service" / "Hermes_Gateway.vbs"
+    if not vbs.is_file():
+        print(f"Hermes gateway is missing. Chat/look will try Ollama.")
+        return False
+    print("Starting Hermes gateway...")
+    subprocess.Popen(
+        ["wscript.exe", str(vbs)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    for _ in range(20):
+        time.sleep(0.5)
+        if hermes_is_up():
+            print(f"Hermes API is up at {HERMES_HOST}/health.")
+            return True
     print(f"Hermes API is down at {HERMES_HOST}/health. Chat/look will try Ollama.")
     return False
+
+
+def ensure_deepseek_harness():
+    """Start ollama launch dsh when this app starts, unless port 3080 is already up."""
+    if _port_open(3080):
+        print("Deepseek harness is already listening on 3080.")
+        return True
+    script = Path(__file__).resolve().parent / "scripts" / "start_dsh.cmd"
+    if not script.is_file():
+        print("Deepseek harness script is missing.")
+        return False
+    print("Starting Deepseek harness...")
+    subprocess.Popen(
+        ["cmd.exe", "/c", str(script)],
+        cwd=str(script.parent),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    return True
 
 
 def ensure_ollama():
@@ -914,6 +959,7 @@ def ensure_ollama():
 
 warn_ignored_openai_env()
 ensure_hermes()
+ensure_deepseek_harness()
 ensure_ollama()
 print("Chat/look fallback: Hermes http://127.0.0.1:8642 → Ollama http://127.0.0.1:11434.")
 

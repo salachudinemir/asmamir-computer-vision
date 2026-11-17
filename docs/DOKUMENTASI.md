@@ -73,7 +73,7 @@ The other scripts open their own window: `aqua_mandala`, `botanical_lily`, `butt
 
 ## Hand bloom
 
-The whole phrase `hand bloom mode` is kept before the anime grammar. `web/hand_bloom.py` draws on the frame from the webcam `app.py` already opened. It does not open a second camera. Thumb tip to index tip sets the pinch distance. That distance grows a blue stem from each fingertip and, once the stem has grown, a five-petal flower. The overlay prints Grow and Bloom. The mode hides the sit-up, anime, dance, YouTube, and canvas surfaces. `standby` and `standby mode` clear the mode and return to the sit-up. The process keeps running.
+The whole phrase `hand bloom mode` is kept before the anime grammar. `web/hand_bloom.py` draws red roses on the frame from the webcam `app.py` already opened. It does not open a second camera. Thumb tip to index tip sets the pinch distance. That distance grows a stem from each fingertip and, once the stem has grown, a red rose. The overlay prints Grow and Bloom. The mode hides the sit-up, anime, dance, YouTube, and canvas surfaces. `standby` and `standby mode` clear the mode and return to the sit-up. The process keeps running.
 
 ## YouTube finger cursor
 

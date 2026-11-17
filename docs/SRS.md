@@ -67,7 +67,7 @@ A longer sentence that merely contains those words does not quit. A stale stippl
 
 1. The whole phrase `hand bloom mode` turns the mode on. `hand bloom`, `hand blossom`, and a longer sentence do not. It does not open anime.
 2. Flowers are drawn on the camera frame the assistant already captures. A second webcam is not opened.
-3. The pinch distance between the thumb tip and the index tip grows a blue stem from each fingertip. A wider pinch raises the grow value. A closer pinch raises the bloom value. When the stem has grown, a filled flower with five petals is drawn at the tip. The frame shows Grow and Bloom.
+3. The pinch distance between the thumb tip and the index tip grows a stem from each fingertip on the camera frame already captured. A wider pinch raises the grow value. A closer pinch raises the bloom value. When the stem has grown, a red rose is drawn at the tip. The frame shows Grow and Bloom.
 4. Entering the mode leaves anime, dance, YouTube, canvas, and the sit-up hologram so they do not cover the camera. The camera window stays up while the mode is on.
 5. `standby` and `standby mode` leave hand bloom and show the sit-up again. The app keeps running.
 6. Shutdown and goodbye still quit only from standby.

@@ -51,7 +51,7 @@ From standby only, including after `standby mode`, the whole phrase `shutdown`, 
 
 ## Hand bloom
 
-The whole phrase `hand bloom mode` turns the mode on. `hand bloom` and `hand blossom` do not, and the phrase does not open anime. Flowers are drawn on the camera the assistant already uses. No second webcam is opened. A pinch grows blue stems from the fingertips and opens a five-petal bloom. The picture shows Grow and Bloom. Anime, dance, YouTube, canvas, and the sit-up hologram are left so they do not cover that camera. `standby` and `standby mode` leave the mode and return to the sit-up. The app keeps running.
+The whole phrase `hand bloom mode` turns the mode on. `hand bloom` and `hand blossom` do not, and the phrase does not open anime. Red roses are drawn on the camera frame the assistant already uses. No second webcam is opened. A pinch grows a stem from each fingertip and opens a red rose. The picture shows Grow and Bloom. Anime, dance, YouTube, canvas, and the sit-up hologram are left so they do not cover that camera. `standby` and `standby mode` leave the mode and return to the sit-up. The app keeps running.
 
 ## Standalone animations
 

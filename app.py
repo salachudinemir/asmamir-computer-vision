@@ -4225,17 +4225,20 @@ def _close_stipple_browser():
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-    subprocess.run(
-        [
-            "powershell", "-NoProfile", "-Command",
-            "Get-CimInstance Win32_Process | "
-            "Where-Object { $_.Name -match 'msedge|chrome' -and $_.CommandLine -like '*anime-p5-profile*' } | "
-            "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        timeout=15,
-    )
+    def _kill_profile():
+        subprocess.run(
+            [
+                "powershell", "-NoProfile", "-Command",
+                "Get-CimInstance Win32_Process | "
+                "Where-Object { $_.Name -match 'msedge|chrome' -and $_.CommandLine -like '*anime-p5-profile*' } | "
+                "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=8,
+        )
+
+    threading.Thread(target=_kill_profile, name="anime-edge-close", daemon=True).start()
     return bool(found)
 
 
@@ -5260,6 +5263,7 @@ while True:
     if _need_ui_standby:
         _need_ui_standby = False
         _anime_cam_hold = False
+        _p5_armed = False
         job = _snap_save
         _snap_save = None
         writer = job.get("writer") if isinstance(job, dict) else None
@@ -5268,8 +5272,15 @@ while True:
                 writer.release()
             except Exception:
                 pass
-        _close_p5_board()
+        _close_anime_board()
         _hide_anime_camera(force=True)
+        _reveal_standby()
+        try:
+            _show_hologram()
+        except Exception as exc:
+            print(f"Standby show: {exc}")
+        cv2.waitKey(1)
+        print("Standby. Anime windows closed.", flush=True)
     if _p5_armed or _anime_cam_hold:
         if _anime_cam_open:
             _hide_anime_camera(force=True)

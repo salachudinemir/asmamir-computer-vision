@@ -35,7 +35,7 @@ The heart grows from the center for 10 seconds. The finished color picture then 
 
 `restart anime` and `restart anime mode` (whole phrases) close the held picture and the Anime camera, then open image selection again. The app does not exit and does not stop at the sit-up.
 
-`standby`, `standby mode`, `stop anime`, `stop stipple`, `stop stipple art`, `stop art`, and `berhenti anime` close the animation, the Anime camera, and the Edge page whose title contains `Anime stipple`, then return to the sit-up. The app keeps running.
+`standby`, `standby mode`, `stop anime`, `stop stipple`, `stop stipple art`, `stop art`, and `berhenti anime` close the held picture, the Anime camera, and the Edge page whose title contains `Anime stipple`, including after the heart has finished, then show the Arissa sit-up. The app keeps running.
 
 ## YouTube finger cursor
 

@@ -40,7 +40,7 @@ This document records the behavior implemented in `app.py` and the modules it ca
 7. The fill starts if the whole transcript is `start`, `capture`, `start capture`, or `take screenshot`.
 8. The heart grows from the center for 10 seconds. Resize during the fill does not clear the dots. After 10 seconds the color picture freezes.
 9. The whole phrase `restart anime` or `restart anime mode` closes the held picture and the Anime camera, then opens image selection again. It does not exit and does not stop at the sit-up.
-10. The whole phrase `standby`, `standby mode`, `stop anime`, `stop stipple`, `stop stipple art`, `stop art`, or `berhenti anime` closes the animation, the Anime camera, and any Edge window whose title contains `Anime stipple`, then returns to the sit-up. The app keeps running.
+10. The whole phrase `standby`, `standby mode`, `stop anime`, `stop stipple`, `stop stipple art`, `stop art`, or `berhenti anime` closes the held picture, the Anime camera, and any Edge window whose title contains `Anime stipple`, including after the heart has finished, then shows the Arissa sit-up. The app keeps running.
 
 ## 5. Record snap
 

@@ -52,7 +52,7 @@ Fill triggers:
 
 `web/anime_board.html` reveals dots from the center for 10 seconds (`REVEAL_MS = 10000`). A resize after start does not clear the ink. The finished plate is held.
 
-`restart anime` and `restart anime mode` set a flag that the window thread handles: close the board and the camera, clear the old selection, and open a new drag. They do not quit and do not go to the sit-up. `standby`, `standby mode`, `stop anime`, `stop stipple`, `stop stipple art`, `stop art`, and `berhenti anime` close the p5 browser by window title (`Anime stipple`, including the Edge InPrivate suffix) and by the `anime-p5-profile` command line, then request the sit-up.
+`restart anime` and `restart anime mode` set a flag that the window thread handles: close the board and the camera, clear the old selection, and open a new drag. They do not quit and do not go to the sit-up. `standby` and `standby mode`, including after the heart has finished, close the held picture, the Anime camera, and the p5 browser (window title `Anime stipple`, including the Edge InPrivate suffix, and the `anime-p5-profile` command line), then show the Arissa sit-up. The same close runs for `stop anime`, `stop stipple`, `stop stipple art`, `stop art`, and `berhenti anime`. The process keeps running.
 
 ## Record snap
 

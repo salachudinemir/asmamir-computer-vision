@@ -174,8 +174,11 @@ def main() -> int:
     parser.add_argument(
         "--pause",
         type=float,
-        default=0.10,
-        help="Sleep seconds after each paste (default 0.10; calm cadence).",
+        default=None,
+        help=(
+            "Sleep seconds after each paste. "
+            "Default 0.05 with --per-char, else 0.12 (line mode)."
+        ),
     )
     parser.add_argument(
         "--countdown",
@@ -197,6 +200,9 @@ def main() -> int:
         ),
     )
     args = parser.parse_args()
+    if args.pause is None:
+        # Early slower per-char cadence (~0.05); line mode stays moderate.
+        args.pause = 0.05 if args.per_char else 0.12
 
     try:
         prepare()

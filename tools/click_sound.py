@@ -12,9 +12,9 @@ from pathlib import Path
 FOLDER = Path(__file__).resolve().parent
 MP3_PATH = FOLDER / "ketik.mp3"
 
-# Calm defaults: soft volume, no overlapping burst.
+# Calm defaults: soft volume; interval matches per-char pause (~0.05s).
 CLICK_VOLUME = 0.32
-MIN_PLAY_INTERVAL_S = 0.10
+MIN_PLAY_INTERVAL_S = 0.045
 
 _ready = False
 _lock = threading.Lock()

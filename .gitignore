@@ -5,6 +5,7 @@ venv/
 __pycache__/
 *.py[cod]
 tools/ketik.wav
+tools/ketik.mp3
 models/
 dataset/
 dataset_aug/

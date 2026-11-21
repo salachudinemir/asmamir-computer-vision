@@ -1,6 +1,6 @@
 """Line-at-a-time (or optional per-char) typing for coding time-lapse videos.
 
-Uses tools/click_sound.py so ketik.wav plays reliably while pasting.
+Uses tools/click_sound.py so ketik.mp3 plays reliably while pasting.
 Focus an empty editor tab within the countdown before input starts.
 """
 from __future__ import annotations

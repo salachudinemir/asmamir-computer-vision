@@ -2545,7 +2545,8 @@ def _anime_exact(command):
     text = " ".join(
         token for token in command.replace("-", " ").lower().split() if token != "[unk]"
     )
-    text = _ANIME_ALIAS.get(text, text)
+    fallback: str = text
+    text = _ANIME_ALIAS.get(text, fallback)
     return text if text in _ANIME_EXACT else ""
 
 

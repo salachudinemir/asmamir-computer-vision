@@ -3283,9 +3283,345 @@ def _take_record_snap(guesses, source):
     return True
 
 
+def _take_priority_voice(guesses, source):
+    """Shutdown before mode phrases, then snap / restart anime / leave-to-standby."""
+    if _take_voice_quit(guesses):
+        return True
+    if _take_record_snap(guesses, source):
+        return True
+    if _take_restart_anime(guesses):
+        return True
+    if _take_leave_to_standby(guesses):
+        return True
+    return False
+
+
+def _handle_speaking_barge(guesses, source):
+    """Commands allowed while she is still talking."""
+    if _take_priority_voice(guesses, source):
+        return True
+    if _return_camera_voice(guesses, interrupt=True):
+        print("Heard: " + " | ".join(guesses))
+        return True
+    if any(wants_quiet(guess) for guess in guesses):
+        print("Heard: " + " | ".join(guesses))
+        cut_speech()
+        return True
+    return False
+
+
+def _dispatch_session_modes(guesses):
+    """Whole-phrase mode gates. Hand bloom is checked before anime."""
+    global anime_pending
+    named_dance = next((wants_named_dance(guess) for guess in guesses if wants_named_dance(guess)), "")
+    if named_dance:
+        request_dance(named_dance)
+        return True
+    if any(wants_dance(guess) for guess in guesses):
+        request_dance()
+        return True
+    if any(wants_hand_bloom(guess) for guess in guesses):
+        set_session_mode("bloom")
+        print("Hand bloom ON")
+        speak(line("bloom_on"))
+        return True
+    screen_hit = any(
+        wants_anime(guess) and not wants_anime_off(guess) and not wants_anime_camera(guess)
+        for guess in guesses
+    )
+    camera_hit = any(
+        wants_anime_camera(guess) and not wants_anime_off(guess) for guess in guesses
+    )
+    if camera_hit and not screen_hit:
+        print("Anime kamera ignored. Screen capture only.")
+        return True
+    if screen_hit:
+        set_session_mode("anime")
+        anime_pending = "screen"
+        print("Anime ON screen")
+        speak(line("anime_on"))
+        return True
+    if any(wants_fog(guess) for guess in guesses):
+        set_session_mode("fog")
+        print("Fog mirror ON")
+        speak(line("fog_on"))
+        return True
+    if any(wants_canvas(guess) for guess in guesses) and not any(
+        wants_canvas_off(guess) for guess in guesses
+    ):
+        set_session_mode("canvas")
+        print("Canvas ON")
+        speak(line("canvas_on"))
+        return True
+    if any(wants_filter(guess) for guess in guesses) and not any(
+        wants_filter_off(guess) for guess in guesses
+    ):
+        set_session_mode("filter")
+        filter_reset_gestures()
+        print("Filter ON")
+        speak(line("filter_on"))
+        return True
+    if any(_load_pointer().wants_off(guess) for guess in guesses):
+        _load_pointer().suppress()
+        print("Pointer OFF")
+        speak(line("pointer_off"))
+        return True
+    if any(_load_pointer().wants_on(guess) for guess in guesses):
+        _load_pointer().arm()
+        print("Pointer ON. Index moves the Windows cursor.")
+        speak(line("pointer_on"))
+        return True
+    if any(wants_airbus(guess) for guess in guesses) and not any(
+        wants_airbus_off(guess) for guess in guesses
+    ):
+        set_session_mode("airbus")
+        print("Airbus ON")
+        speak(line("airbus_on"))
+        return True
+    return False
+
+
+def _dispatch_open_apps(guesses):
+    """YouTube mode and other open-app phrases."""
+    if any(_whole_phrase(guess) == "youtube mode" for guess in guesses):
+        ok = _load_open_apps().launch("youtube")
+        if ok:
+            _load_pointer().expect_youtube()
+            print("Open youtube ON")
+            speak(line("app_youtube"))
+        else:
+            print("Open youtube: missing")
+            speak(line("app_missing", name="YouTube"))
+        return True
+    app_guess = next((guess for guess in guesses if wants_open_app(guess)), None)
+    if not app_guess:
+        return False
+    app, ok = launch_named_app(app_guess)
+    label = {
+        "youtube": "app_youtube",
+        "excel": "app_excel",
+        "browser": "app_browser",
+        "wechat": "app_wechat",
+        "whatsapp": "app_whatsapp",
+    }.get(app)
+    shown = {
+        "youtube": "YouTube",
+        "excel": "Excel",
+        "browser": "the browser",
+        "wechat": "WeChat",
+        "whatsapp": "WhatsApp",
+    }.get(app, app or "that app")
+    if ok and label:
+        print(f"Open {app} ON")
+        if app == "youtube":
+            _load_pointer().expect_youtube()
+            print("YouTube finger cursor on. Index moves it. Pinch clicks.")
+        speak(line(label))
+    else:
+        print(f"Open {app or app_guess}: missing")
+        speak(line("app_missing", name=shown))
+    return True
+
+
+def _handle_read_page():
+    global vision_busy, vision_label
+    vision_label = "Reading"
+    print("Opening the camera to read.")
+    if not wait_for_camera_frame():
+        vision_busy = False
+        speak(line("page_missing"))
+        return True
+    print("Reading the page...")
+    page_text = read_page()
+    vision_busy = False
+    if page_text is None:
+        speak(line("page_missing"))
+    elif not page_text:
+        speak(line("page_blank"))
+    else:
+        print(f"Page: {page_text}")
+        solved = solve_written(page_text)
+        if solved:
+            print(f"Solved: {solved}")
+            speak(solved)
+        else:
+            speak(page_text)
+    return True
+
+
+def _handle_solve_page():
+    global vision_busy, vision_label
+    vision_label = "Reading"
+    print("Opening the camera to read.")
+    if not wait_for_camera_frame():
+        vision_busy = False
+        speak(line("page_missing"))
+        return True
+    print("Solving the writing...")
+    page_text = read_page()
+    vision_busy = False
+    solved = solve_written(page_text or "")
+    if page_text is None:
+        speak(line("page_missing"))
+    elif solved:
+        print(f"Page: {page_text}")
+        print(f"Solved: {solved}")
+        speak(solved)
+    elif not page_text:
+        speak(line("page_blank"))
+    else:
+        speak("I could not calculate that." if speech_language == "en" else "Itu tidak bisa dihitung.")
+    return True
+
+
+def _dispatch_talk_and_vision(guesses):
+    """Language, profile, canvas tools, vision, late modes, math, and open questions."""
+    global speech_language
+    about = next((profile_reply(guess) for guess in guesses if profile_reply(guess)), None)
+    target = next((wants_language(guess) for guess in guesses if wants_language(guess)), None)
+    if target:
+        if target == speech_language:
+            speak(line("language_same"))
+        elif target == "id" and not ensure_indonesian_listener():
+            speak(line("no_indonesian_ear"))
+        else:
+            speech_language = target
+            print(f"Language {speech_language}")
+            speak(line("language_en" if target == "en" else "language_id"))
+        return True
+    if about:
+        speak(about)
+        return True
+    if any(wants_standby(guess) for guess in guesses):
+        request_camera_screen()
+        speak("ok, back to standby mode")
+        return True
+    if any(wants_clear_draw(guess) for guess in guesses):
+        canvas_clear_ink()
+        print("Canvas cleared")
+        speak("cleared" if speech_language == "en" else "sudah dihapus")
+        return True
+    if any(wants_pen_color(guess) for guess in guesses):
+        named = next((wants_pen_color(guess) and guess for guess in guesses if wants_pen_color(guess)), "cyan")
+        picked = canvas_set_color(named)
+        print(f"Pen {picked}")
+        speak(picked or "cyan")
+        return True
+    if any(wants_read(guess) for guess in guesses):
+        return _handle_read_page()
+    if any(wants_solve(guess) for guess in guesses):
+        return _handle_solve_page()
+    if any(wants_look(guess) for guess in guesses):
+        start_look_background(next(guess for guess in guesses if wants_look(guess)))
+        return True
+    if any(wants_fruit(guess) for guess in guesses):
+        set_session_mode("fruit")
+        print("Fruit ON")
+        speak(line("fruit_on", name=USER_NICKNAME))
+        return True
+    if any(wants_counting(guess) for guess in guesses):
+        set_session_mode("count")
+        print("Counting ON")
+        speak(line("count_on", name=USER_NICKNAME))
+        return True
+    if any(wants_deagle(guess) for guess in guesses) and not any(
+        wants_deagle_off(guess) for guess in guesses
+    ):
+        set_session_mode("deagle")
+        print("Deagle ON")
+        speak(line("deagle_on"))
+        return True
+    if any(wants_dragon(guess) for guess in guesses) and not any(
+        wants_dragon_off(guess) for guess in guesses
+    ):
+        set_session_mode("dragon")
+        print("Dragon ON")
+        speak(line("dragon_on"))
+        return True
+    if _take_voice_quit(guesses):
+        return True
+    if any(wants_quiet(guess) for guess in guesses):
+        cut_speech()
+        return True
+    if any(wants_stop(guess) for guess in guesses) or any(
+        wants_deagle_off(guess) for guess in guesses
+    ) or any(wants_dragon_off(guess) for guess in guesses) or any(
+        wants_canvas_off(guess) for guess in guesses
+    ) or any(wants_airbus_off(guess) for guess in guesses) or any(
+        wants_filter_off(guess) for guess in guesses
+    ) or any(wants_anime_off(guess) for guess in guesses) or any(
+        wants_standby(guess) for guess in guesses
+    ):
+        request_camera_screen()
+        speak("ok, back to standby mode")
+        return True
+    calculated = None
+    for guess in guesses:
+        calculated = math_reply(guess)
+        if calculated:
+            break
+    if calculated:
+        print(f"Math: {calculated}")
+        speak(calculated)
+        return True
+    asked = guesses[0]
+
+    def _answer_later(text=asked):
+        try:
+            reply = ask_language_model(text)
+            if reply and not heard_herself(reply):
+                speak(reply)
+        except Exception as exc:
+            print(f"Open question failed: {exc}", flush=True)
+
+    threading.Thread(target=_answer_later, daemon=True).start()
+    return True
+
+
+def _handle_heard_command(guesses, source, audio):
+    """One clear utterance after standby wake checks."""
+    if _take_priority_voice(guesses, source):
+        return
+    if _p5_open and not _p5_armed and any(_stipple_arm_phrase(guess) for guess in guesses):
+        print("Heard: " + " | ".join(guesses))
+        _arm_stipple("voice")
+        return
+    if _p5_open and not _p5_armed and time.time() >= _p5_listen_at and _matches_saved_snap(audio):
+        _arm_stipple("sound match")
+        return
+    if not guesses:
+        print("Heard audio, but the words were not clear.")
+        return
+    if _audio_too_short(audio):
+        print("Heard a short burst, ignored.")
+        return
+    print("Heard: " + " | ".join(guesses))
+    if _take_priority_voice(guesses, source):
+        return
+    if any(wants_wake_name(guess) for guess in guesses):
+        print("Voice asmamir. Standby.")
+        request_camera_screen()
+        speak(line("wake"))
+        return
+    if not _standby_visible:
+        print("Quiet. Snap thumb to middle, or say asmamir.")
+        return
+    if _return_camera_voice(guesses):
+        return
+    if _dispatch_session_modes(guesses):
+        return
+    if all(heard_herself(guess) for guess in guesses) or (
+        last_spoken_fruit and any(last_spoken_fruit in guess for guess in guesses)
+    ):
+        print("Ignored own voice.")
+        return
+    if _dispatch_open_apps(guesses):
+        return
+    _dispatch_talk_and_vision(guesses)
+
+
 def listen_for_command():
     """Listen continuously for English commands and profile questions."""
-    global shutdown_requested, vision_busy, vision_label, speech_language, anime_pending
     recognizer.dynamic_energy_threshold = True
     recognizer.dynamic_energy_ratio = 1.3
     recognizer.pause_threshold = 1.05
@@ -3308,301 +3644,16 @@ def listen_for_command():
                         heard = recognizer.listen(source, timeout=0.5, phrase_time_limit=1.4)
                     except sr.WaitTimeoutError:
                         continue
-                    guesses = transcripts_from(heard)
-                    if _take_voice_quit(guesses):
-                        continue
-                    if _take_record_snap(guesses, source):
-                        continue
-                    if _take_restart_anime(guesses):
-                        continue
-                    if _take_leave_to_standby(guesses):
-                        continue
-                    if _return_camera_voice(guesses, interrupt=True):
-                        print("Heard: " + " | ".join(guesses))
-                        continue
-                    if any(wants_quiet(guess) for guess in guesses):
-                        print("Heard: " + " | ".join(guesses))
-                        cut_speech()
+                    _handle_speaking_barge(transcripts_from(heard), source)
                 print("Listening for you...")
                 audio = recognizer.listen(source, timeout=6, phrase_time_limit=6)
                 if speaking or time.time() < quiet_after:
                     print("Ignored speaker playback.")
                     continue
                 guesses = transcripts_from(audio)
-                if _take_voice_quit(guesses):
+                if _take_priority_voice(guesses, source):
                     continue
-                if _take_record_snap(guesses, source):
-                    continue
-                if _take_restart_anime(guesses):
-                    continue
-                if _take_leave_to_standby(guesses):
-                    continue
-                if _p5_open and not _p5_armed and any(_stipple_arm_phrase(guess) for guess in guesses):
-                    print("Heard: " + " | ".join(guesses))
-                    _arm_stipple("voice")
-                    continue
-                if _p5_open and not _p5_armed and time.time() >= _p5_listen_at and _matches_saved_snap(audio):
-                    _arm_stipple("sound match")
-                    continue
-                if not guesses:
-                    print("Heard audio, but the words were not clear.")
-                    continue
-                if _audio_too_short(audio):
-                    print("Heard a short burst, ignored.")
-                    continue
-                print("Heard: " + " | ".join(guesses))
-                if _take_voice_quit(guesses):
-                    continue
-                if _take_record_snap(guesses, source):
-                    continue
-                if _take_restart_anime(guesses):
-                    continue
-                if _take_leave_to_standby(guesses):
-                    continue
-                if any(wants_wake_name(guess) for guess in guesses):
-                    print("Voice asmamir. Standby.")
-                    request_camera_screen()
-                    speak(line("wake"))
-                    continue
-                if not _standby_visible:
-                    print("Quiet. Snap thumb to middle, or say asmamir.")
-                    continue
-                if _return_camera_voice(guesses):
-                    continue
-                named_dance = next((wants_named_dance(guess) for guess in guesses if wants_named_dance(guess)), "")
-                if named_dance:
-                    request_dance(named_dance)
-                    continue
-                if any(wants_dance(guess) for guess in guesses):
-                    request_dance()
-                    continue
-                screen_hit = any(
-                    wants_anime(guess) and not wants_anime_off(guess) and not wants_anime_camera(guess)
-                    for guess in guesses
-                )
-                camera_hit = any(
-                    wants_anime_camera(guess) and not wants_anime_off(guess) for guess in guesses
-                )
-                if camera_hit and not screen_hit:
-                    print("Anime kamera ignored. Screen capture only.")
-                    continue
-                if screen_hit:
-                    set_session_mode("anime")
-                    anime_pending = "screen"
-                    print("Anime ON screen")
-                    speak(line("anime_on"))
-                    continue
-                if any(wants_fog(guess) for guess in guesses):
-                    set_session_mode("fog")
-                    print("Fog mirror ON")
-                    speak(line("fog_on"))
-                    continue
-                if any(wants_hand_bloom(guess) for guess in guesses):
-                    set_session_mode("bloom")
-                    print("Hand bloom ON")
-                    speak(line("bloom_on"))
-                    continue
-                if any(wants_canvas(guess) for guess in guesses) and not any(
-                    wants_canvas_off(guess) for guess in guesses
-                ):
-                    set_session_mode("canvas")
-                    print("Canvas ON")
-                    speak(line("canvas_on"))
-                    continue
-                if any(wants_filter(guess) for guess in guesses) and not any(
-                    wants_filter_off(guess) for guess in guesses
-                ):
-                    set_session_mode("filter")
-                    filter_reset_gestures()
-                    print("Filter ON")
-                    speak(line("filter_on"))
-                    continue
-                if any(_load_pointer().wants_off(guess) for guess in guesses):
-                    _load_pointer().suppress()
-                    print("Pointer OFF")
-                    speak(line("pointer_off"))
-                    continue
-                if any(_load_pointer().wants_on(guess) for guess in guesses):
-                    _load_pointer().arm()
-                    print("Pointer ON. Index moves the Windows cursor.")
-                    speak(line("pointer_on"))
-                    continue
-                if any(wants_airbus(guess) for guess in guesses) and not any(
-                    wants_airbus_off(guess) for guess in guesses
-                ):
-                    set_session_mode("airbus")
-                    print("Airbus ON")
-                    speak(line("airbus_on"))
-                    continue
-                if all(heard_herself(guess) for guess in guesses) or (
-                    last_spoken_fruit and any(last_spoken_fruit in guess for guess in guesses)
-                ):
-                    print("Ignored own voice.")
-                    continue
-                if any(_whole_phrase(guess) == "youtube mode" for guess in guesses):
-                    ok = _load_open_apps().launch("youtube")
-                    if ok:
-                        _load_pointer().expect_youtube()
-                        print("Open youtube ON")
-                        speak(line("app_youtube"))
-                    else:
-                        print("Open youtube: missing")
-                        speak(line("app_missing", name="YouTube"))
-                    continue
-                app_guess = next((guess for guess in guesses if wants_open_app(guess)), None)
-                if app_guess:
-                    app, ok = launch_named_app(app_guess)
-                    label = {
-                        "youtube": "app_youtube",
-                        "excel": "app_excel",
-                        "browser": "app_browser",
-                        "wechat": "app_wechat",
-                        "whatsapp": "app_whatsapp",
-                    }.get(app)
-                    shown = {
-                        "youtube": "YouTube",
-                        "excel": "Excel",
-                        "browser": "the browser",
-                        "wechat": "WeChat",
-                        "whatsapp": "WhatsApp",
-                    }.get(app, app or "that app")
-                    if ok and label:
-                        print(f"Open {app} ON")
-                        if app == "youtube":
-                            _load_pointer().expect_youtube()
-                            print("YouTube finger cursor on. Index moves it. Pinch clicks.")
-                        speak(line(label))
-                    else:
-                        print(f"Open {app or app_guess}: missing")
-                        speak(line("app_missing", name=shown))
-                    continue
-
-                about = next((profile_reply(guess) for guess in guesses if profile_reply(guess)), None)
-                target = next((wants_language(guess) for guess in guesses if wants_language(guess)), None)
-                if target:
-                    if target == speech_language:
-                        speak(line("language_same"))
-                    elif target == "id" and not ensure_indonesian_listener():
-                        speak(line("no_indonesian_ear"))
-                    else:
-                        speech_language = target
-                        print(f"Language {speech_language}")
-                        speak(line("language_en" if target == "en" else "language_id"))
-                elif about:
-                    speak(about)
-                elif any(wants_standby(guess) for guess in guesses):
-                    request_camera_screen()
-                    speak("ok, back to standby mode")
-                elif any(wants_clear_draw(guess) for guess in guesses):
-                    canvas_clear_ink()
-                    print("Canvas cleared")
-                    speak("cleared" if speech_language == "en" else "sudah dihapus")
-                elif any(wants_pen_color(guess) for guess in guesses):
-                    named = next((wants_pen_color(guess) and guess for guess in guesses if wants_pen_color(guess)), "cyan")
-                    picked = canvas_set_color(named)
-                    print(f"Pen {picked}")
-                    speak(picked or "cyan")
-                elif any(wants_read(guess) for guess in guesses):
-                    vision_label = "Reading"
-                    print("Opening the camera to read.")
-                    if not wait_for_camera_frame():
-                        vision_busy = False
-                        speak(line("page_missing"))
-                        continue
-                    print("Reading the page...")
-                    page_text = read_page()
-                    vision_busy = False
-                    if page_text is None:
-                        speak(line("page_missing"))
-                    elif not page_text:
-                        speak(line("page_blank"))
-                    else:
-                        print(f"Page: {page_text}")
-                        solved = solve_written(page_text)
-                        if solved:
-                            print(f"Solved: {solved}")
-                            speak(solved)
-                        else:
-                            speak(page_text)
-                elif any(wants_solve(guess) for guess in guesses):
-                    vision_label = "Reading"
-                    print("Opening the camera to read.")
-                    if not wait_for_camera_frame():
-                        vision_busy = False
-                        speak(line("page_missing"))
-                        continue
-                    print("Solving the writing...")
-                    page_text = read_page()
-                    vision_busy = False
-                    solved = solve_written(page_text or "")
-                    if page_text is None:
-                        speak(line("page_missing"))
-                    elif solved:
-                        print(f"Page: {page_text}")
-                        print(f"Solved: {solved}")
-                        speak(solved)
-                    elif not page_text:
-                        speak(line("page_blank"))
-                    else:
-                        speak("I could not calculate that." if speech_language == "en" else "Itu tidak bisa dihitung.")
-                elif any(wants_look(guess) for guess in guesses):
-                    start_look_background(
-                        next(guess for guess in guesses if wants_look(guess))
-                    )
-                elif any(wants_fruit(guess) for guess in guesses):
-                    set_session_mode("fruit")
-                    print("Fruit ON")
-                    speak(line("fruit_on", name=USER_NICKNAME))
-                elif any(wants_counting(guess) for guess in guesses):
-                    set_session_mode("count")
-                    print("Counting ON")
-                    speak(line("count_on", name=USER_NICKNAME))
-                elif any(wants_deagle(guess) for guess in guesses) and not any(
-                    wants_deagle_off(guess) for guess in guesses
-                ):
-                    set_session_mode("deagle")
-                    print("Deagle ON")
-                    speak(line("deagle_on"))
-                elif any(wants_dragon(guess) for guess in guesses) and not any(
-                    wants_dragon_off(guess) for guess in guesses
-                ):
-                    set_session_mode("dragon")
-                    print("Dragon ON")
-                    speak(line("dragon_on"))
-                elif _take_voice_quit(guesses):
-                    pass
-                elif any(wants_quiet(guess) for guess in guesses):
-                    cut_speech()
-                elif any(wants_stop(guess) for guess in guesses) or any(
-                    wants_deagle_off(guess) for guess in guesses
-                ) or any(wants_dragon_off(guess) for guess in guesses) or any(
-                    wants_canvas_off(guess) for guess in guesses
-                ) or any(wants_airbus_off(guess) for guess in guesses) or any(
-                    wants_filter_off(guess) for guess in guesses
-                ) or any(wants_anime_off(guess) for guess in guesses) or any(
-                    wants_standby(guess) for guess in guesses
-                ):
-                    request_camera_screen()
-                    speak("ok, back to standby mode")
-                else:
-                    calculated = None
-                    for guess in guesses:
-                        calculated = math_reply(guess)
-                        if calculated:
-                            break
-                    if calculated:
-                        print(f"Math: {calculated}")
-                        speak(calculated)
-                    else:
-                        asked = guesses[0]
-                        def _answer_later(text=asked):
-                            try:
-                                reply = ask_language_model(text)
-                                if reply and not heard_herself(reply):
-                                    speak(reply)
-                            except Exception as exc:
-                                print(f"Open question failed: {exc}", flush=True)
-                        threading.Thread(target=_answer_later, daemon=True).start()
+                _handle_heard_command(guesses, source, audio)
             except sr.WaitTimeoutError:
                 continue
             except sr.UnknownValueError:

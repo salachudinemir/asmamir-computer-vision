@@ -57,7 +57,7 @@ class Handler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def log_message(self, format, *args):
-        print(f"[{self.log_date_time_string()}] {fmt % args}")
+        print(f"[{self.log_date_time_string()}] {format % args}")
 
 
 def make_server():

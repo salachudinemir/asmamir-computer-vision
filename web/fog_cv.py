@@ -15,7 +15,7 @@ import cv2
 import numpy as np
 
 _mask = None
-_strokes = {"index": None, "palm": None}
+_strokes: dict[str, tuple[float, float] | None] = {"index": None, "palm": None}
 _face = None
 
 
@@ -226,13 +226,13 @@ def draw_fog_overlay(frame, results):
     _mouth_breath(frame, mask)
     hand = _one_hand(results)
     pose = _classify(hand)
-    if pose == "index":
+    if pose == "index" and hand is not None:
         _strokes["palm"] = None
         tip = (float(hand[8].x * width), float(hand[8].y * height))
         brush = _brush_radius(width, height)
         point = _follow("index", tip, brush, mask)
         cv2.circle(frame, (int(point[0]), int(point[1])), max(3, int(round(brush))), (255, 255, 255), 1)
-    elif pose == "open":
+    elif pose == "open" and hand is not None:
         _strokes["index"] = None
         palm = _palm_point(hand, width, height)
         brush = _palm_radius(width, height)

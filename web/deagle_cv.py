@@ -84,7 +84,7 @@ class _Static(SimpleHTTPRequestHandler):
         return super().guess_type(path)
 
     def log_message(self, format, *args):
-        print(f"[deagle-http] {fmt % args}")
+        print(f"[deagle-http] {format % args}")
 
 
 def _ensure_http():

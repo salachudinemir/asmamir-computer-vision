@@ -311,8 +311,9 @@ def _orbit_arrays(path):
         located = trimesh.transform_points(vertices, transform).astype(np.float32)
         low = np.minimum(low, located.min(axis=0))
         high = np.maximum(high, located.max(axis=0))
-        chunks.append(located[faces])
-        paints.append(_face_colors(geom, faces))
+        face_ids = np.asarray(faces, dtype=np.intp)
+        chunks.append(located[face_ids])
+        paints.append(_face_colors(geom, face_ids))
     if not chunks:
         raise RuntimeError("no triangles")
     center = (low + high) * 0.5

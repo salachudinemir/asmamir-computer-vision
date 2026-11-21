@@ -171,7 +171,7 @@ def _invoke_call(hwnd, kind):
         comtypes.CoInitialize()
         GetModule("UIAutomationCore.dll")
         try:
-            import comtypes.gen.UIAutomationClient as uia_mod
+            import comtypes.gen.UIAutomationClient as uia_mod  # type: ignore[import]
         except ImportError:
             return
 

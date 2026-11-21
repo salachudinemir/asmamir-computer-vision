@@ -261,10 +261,12 @@ def draw(pos, col, yaw, pitch, width, height, background):
     _gl.glLoadIdentity()
     _gl.glRotatef(float(pitch), 1.0, 0.0, 0.0)
     _gl.glRotatef(float(yaw), 0.0, 1.0, 0.0)
-    if on_gpu:
-        _bind_buffer(0x8892, _buffers[0])
+    bind_buffer = _bind_buffer
+    buffers = _buffers
+    if on_gpu and bind_buffer is not None and buffers is not None:
+        bind_buffer(0x8892, buffers[0])
         _gl.glVertexPointer(3, _GL_FLOAT, 0, None)
-        _bind_buffer(0x8892, _buffers[1])
+        bind_buffer(0x8892, buffers[1])
         _gl.glColorPointer(3, _GL_UNSIGNED_BYTE, 0, None)
     else:
         _gl.glVertexPointer(3, _GL_FLOAT, 0, pos.ctypes.data_as(ctypes.c_void_p))

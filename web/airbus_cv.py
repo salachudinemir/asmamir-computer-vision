@@ -248,7 +248,7 @@ class _Static(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def log_message(self, format, *args):
-        print(f"[airbus-http] {fmt % args}")
+        print(f"[airbus-http] {format % args}")
 
 
 def _ensure_http():

@@ -6,6 +6,8 @@ whole source once and pastes it with one Ctrl+V. It does not type characters
 and it does not press Enter per line. Then it goes to the top and moves down
 one line at a time until the end. It stops if the foreground window is not
 Visual Studio Code. The paste waits until the 3 second countdown finishes.
+
+Each paste and each scroll step plays tools/ketik.wav via click_sound.
 """
 import ctypes
 import sys
@@ -14,6 +16,8 @@ from pathlib import Path
 
 import pyautogui
 import pyperclip
+
+from click_sound import prepare, play
 
 DEFAULT = Path(__file__).resolve().parent.parent / "animation" / "test_capture.py"
 SCROLL_PAUSE = 0.18
@@ -63,6 +67,10 @@ def main():
             f"Focus Visual Studio Code, then run again with {EMPTY_FLAG}."
         )
         sys.exit(1)
+    try:
+        prepare()
+    except Exception:
+        sys.exit(1)
     paths = [arg for arg in args if arg != EMPTY_FLAG]
     source = Path(paths[0]) if paths else DEFAULT
     if not source.is_file():
@@ -79,6 +87,7 @@ def main():
     time.sleep(0.12)
     require_code("before the paste")
     pyautogui.hotkey("ctrl", "v")
+    play()
     time.sleep(0.3)
     require_code("before scrolling")
     pyautogui.hotkey("ctrl", "home")
@@ -87,6 +96,7 @@ def main():
     for index in range(1, line_count):
         require_code(f"at line {index}")
         pyautogui.hotkey("ctrl", "down")
+        play()
         time.sleep(SCROLL_PAUSE)
     print("Done.")
 

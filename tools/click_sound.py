@@ -1,7 +1,7 @@
 """Reliable mechanical click for typing / scroll time-lapse scripts.
 
-Plays tools/ketik.mp3 (absolute path next to this file) via pygame.mixer so
-rapid clicks can overlap. winsound cannot play MP3; wav generation is not used.
+Plays tools/ketik.mp3 (absolute path next to this file) via pygame.mixer.
+Volume is kept low and plays are throttled so rapid callers stay calm.
 """
 from __future__ import annotations
 
@@ -12,10 +12,15 @@ from pathlib import Path
 FOLDER = Path(__file__).resolve().parent
 MP3_PATH = FOLDER / "ketik.mp3"
 
+# Calm defaults: soft volume, no overlapping burst.
+CLICK_VOLUME = 0.32
+MIN_PLAY_INTERVAL_S = 0.10
+
 _ready = False
 _lock = threading.Lock()
 _mixer_ready = False
 _sound = None
+_last_play_mono = 0.0
 
 
 def _init_mixer() -> None:
@@ -31,7 +36,8 @@ def _init_mixer() -> None:
 
     if not pygame.mixer.get_init():
         pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
-        pygame.mixer.set_num_channels(16)
+        # Few channels: throttle already limits rate; avoid stacked chaos.
+        pygame.mixer.set_num_channels(4)
     _mixer_ready = True
 
 
@@ -48,6 +54,15 @@ def require_mp3(path: Path | None = None) -> Path:
     return mp3
 
 
+def _load_sound(abs_path: str):
+    """Load mp3 and apply the calm volume."""
+    import pygame
+
+    sound = pygame.mixer.Sound(abs_path)
+    sound.set_volume(CLICK_VOLUME)
+    return sound
+
+
 def verify(path: Path | None = None) -> Path:
     """Require the mp3 and load it into pygame.mixer. Raises RuntimeError on failure."""
     global _ready, _sound
@@ -55,9 +70,7 @@ def verify(path: Path | None = None) -> Path:
     abs_path = str(mp3)
     try:
         _init_mixer()
-        import pygame
-
-        sound = pygame.mixer.Sound(abs_path)
+        sound = _load_sound(abs_path)
         # Synchronous probe so a bad/unplayable file fails before typing starts.
         channel = sound.play()
         if channel is None:
@@ -73,24 +86,28 @@ def verify(path: Path | None = None) -> Path:
 
 
 def play(path: Path | None = None) -> None:
-    """Play one click asynchronously (overlapping-safe via mixer channels)."""
-    global _sound
+    """Play one click asynchronously, throttled to MIN_PLAY_INTERVAL_S."""
+    global _sound, _last_play_mono
 
     def _run() -> None:
-        global _sound
+        global _sound, _last_play_mono
         try:
             _init_mixer()
-            import pygame
 
             with _lock:
+                now = time.monotonic()
+                if now - _last_play_mono < MIN_PLAY_INTERVAL_S:
+                    return
                 sound = _sound
-            if sound is None or path is not None:
-                mp3 = require_mp3(path)
-                sound = pygame.mixer.Sound(str(mp3))
-                if path is None:
-                    with _lock:
+                if sound is None or path is not None:
+                    mp3 = require_mp3(path)
+                    sound = _load_sound(str(mp3))
+                    if path is None:
                         _sound = sound
-            sound.play()
+                else:
+                    sound.set_volume(CLICK_VOLUME)
+                _last_play_mono = now
+                sound.play()
         except Exception:
             pass
 
@@ -101,7 +118,10 @@ def prepare() -> Path:
     """Verify mp3 before a typer starts. Prints a clear error and re-raises."""
     try:
         mp3 = verify()
-        print(f"Click sound ready: {mp3}")
+        print(
+            f"Click sound ready: {mp3} "
+            f"(volume={CLICK_VOLUME}, min_interval={MIN_PLAY_INTERVAL_S}s)"
+        )
         return mp3
     except Exception as exc:
         print(f"ERROR: keyboard click sound not available: {exc}")

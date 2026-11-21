@@ -35,10 +35,11 @@ done()
 """
 
 
-def paste_text(text: str) -> None:
+def paste_text(text: str, click: bool = True) -> None:
     pyperclip.copy(text)
     pyautogui.hotkey("ctrl", "v")
-    play()
+    if click:
+        play()
 
 
 def type_lines(source: str, per_char: bool, pause: float) -> None:
@@ -49,23 +50,25 @@ def type_lines(source: str, per_char: bool, pause: float) -> None:
         if teks:
             if per_char:
                 for ch in teks:
-                    paste_text(ch)
+                    paste_text(ch, click=True)
                     time.sleep(pause)
             else:
-                paste_text(teks)
+                # Line-paste: one click per line (after Enter), not paste+Enter spam.
+                paste_text(teks, click=False)
                 time.sleep(pause)
         pyautogui.press("esc")
         pyautogui.press("enter")
-        play()
+        if not per_char:
+            play()
 
 
 def type_command(command: str, per_char: bool, pause: float) -> None:
     if per_char:
         for ch in command:
-            paste_text(ch)
+            paste_text(ch, click=True)
             time.sleep(pause)
     else:
-        paste_text(command)
+        paste_text(command, click=False)
         time.sleep(pause)
     pyautogui.press("enter")
     play()
@@ -81,8 +84,8 @@ def main() -> int:
     parser.add_argument(
         "--pause",
         type=float,
-        default=0.01,
-        help="Sleep seconds after each paste (default 0.01).",
+        default=0.10,
+        help="Sleep seconds after each paste (default 0.10; calm cadence).",
     )
     parser.add_argument(
         "--countdown",

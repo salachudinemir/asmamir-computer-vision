@@ -7,7 +7,8 @@ and it does not press Enter per line. Then it goes to the top and moves down
 one line at a time until the end. It stops if the foreground window is not
 Visual Studio Code. The paste waits until the 3 second countdown finishes.
 
-Each paste and each scroll step plays tools/ketik.mp3 via click_sound.
+Each paste and each scroll step plays tools/ketik.mp3 via click_sound
+(throttled + soft volume in click_sound).
 """
 import ctypes
 import sys

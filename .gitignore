@@ -30,3 +30,4 @@ web/deagle/
 *.lnk
 *.lnk.not-startup
 animation/monalisa.jpg
+tools/animasi.py

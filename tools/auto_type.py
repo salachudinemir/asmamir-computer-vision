@@ -1,7 +1,9 @@
 """Line-at-a-time (or optional per-char) typing for coding time-lapse videos.
 
 Uses tools/click_sound.py so ketik.mp3 plays reliably while pasting.
-Focus an empty editor tab within the countdown before input starts.
+After typing, default behavior saves to tools/animasi.py, focuses the
+VS Code terminal (Ctrl+`), runs `python tools/animasi.py`, and presses Enter.
+Pass --no-run to skip save/terminal/run.
 """
 from __future__ import annotations
 
@@ -14,7 +16,26 @@ import pyperclip
 
 from click_sound import prepare, play
 
-kode_turtle = """from turtle import *
+# Typed into the focused editor, then saved here and executed in the terminal.
+TARGET_REL = "tools/animasi.py"
+RUN_CMD = f"python {TARGET_REL}"
+
+kode_turtle = """from turtle import (
+    Terminator,
+    bgcolor,
+    circle,
+    color,
+    done,
+    fd,
+    hideturtle,
+    lt,
+    right,
+    rt,
+    setpos,
+    speed,
+    tracer,
+)
+import tkinter
 
 speed(0)
 bgcolor("black")
@@ -23,15 +44,18 @@ color('aqua')
 tracer(3, 0)
 hideturtle()
 
-for i in range(500):
-    rt(i)
-    circle(150, i)
-    fd(70)
-    right(210)
-    fd(i)
-    lt(1)
+try:
+    for i in range(500):
+        rt(i)
+        circle(150, i)
+        fd(70)
+        right(210)
+        fd(i)
+        lt(1)
 
-done()
+    done()
+except (Terminator, tkinter.TclError):
+    pass
 """
 
 
@@ -74,8 +98,32 @@ def type_command(command: str, per_char: bool, pause: float) -> None:
     play()
 
 
+def save_to_target() -> None:
+    """Save As into TARGET_REL so untitled tabs do not block the run step."""
+    # Ctrl+Shift+S always opens Save As (unlike Ctrl+S on a named buffer).
+    pyautogui.hotkey("ctrl", "shift", "s")
+    time.sleep(0.6)
+    paste_text(TARGET_REL, click=False)
+    time.sleep(0.15)
+    pyautogui.press("enter")
+    time.sleep(0.4)
+    # Confirm overwrite when tools/animasi.py already exists.
+    pyautogui.press("enter")
+    time.sleep(0.35)
+
+
+def run_in_terminal(per_char: bool, pause: float) -> None:
+    """Focus VS Code terminal and run RUN_CMD."""
+    pyautogui.hotkey("ctrl", "`")
+    time.sleep(0.5)
+    type_command(RUN_CMD, per_char=per_char, pause=pause)
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Type demo code into the focused editor with click sounds.")
+    parser = argparse.ArgumentParser(
+        description="Type demo code into the focused editor with click sounds, "
+        "then save and run it in the VS Code terminal (unless --no-run)."
+    )
     parser.add_argument(
         "--per-char",
         action="store_true",
@@ -91,12 +139,12 @@ def main() -> int:
         "--countdown",
         type=float,
         default=3.0,
-        help="Seconds to switch focus to an empty editor tab (default 3).",
+        help="Seconds to switch focus to the editor tab that will receive code (default 3).",
     )
     parser.add_argument(
         "--no-run",
         action="store_true",
-        help="Skip Ctrl+S / terminal / python tools/animasi.py after typing.",
+        help=f"Typing only: skip Save As / terminal / {RUN_CMD}.",
     )
     args = parser.parse_args()
 
@@ -105,9 +153,10 @@ def main() -> int:
     except Exception:
         return 1
 
+    run_hint = "typing only (--no-run)" if args.no_run else f"then save+run {RUN_CMD}"
     print(
-        f"Ready. Focus an empty editor tab in {args.countdown:.0f}s "
-        f"(mode={'per-char' if args.per_char else 'line'})."
+        f"Ready. Focus the editor tab in {args.countdown:.0f}s "
+        f"(mode={'per-char' if args.per_char else 'line'}; {run_hint})."
     )
     time.sleep(args.countdown)
 
@@ -117,13 +166,10 @@ def main() -> int:
         print("Done (typing only).")
         return 0
 
-    time.sleep(0.02)
-    pyautogui.hotkey("ctrl", "s")
-    time.sleep(0.02)
-    pyautogui.hotkey("ctrl", "`")
-    time.sleep(0.5)
-    type_command("python tools/animasi.py", per_char=args.per_char, pause=args.pause)
-    print("Done.")
+    time.sleep(0.05)
+    save_to_target()
+    run_in_terminal(per_char=args.per_char, pause=args.pause)
+    print(f"Done. Ran: {RUN_CMD}")
     return 0
 
 

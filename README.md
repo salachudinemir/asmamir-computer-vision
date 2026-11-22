@@ -13,6 +13,7 @@ Download these yourself. Do not add them to git:
 - Other 3D models (`*.glb`, `*.usdz`, `*.npz`), textures, and the folders `web/hologram/source/`, `web/airbus/`, and `web/deagle/`.
 - `.env`, `venv/`, `dataset/`, `dataset_aug/`, and local logs.
 - CCTV sample clips, annotated `output_speed.mp4`, `speed_log.csv`, and YOLO weight files such as `yolov8m.pt` / `yolov8s.pt`.
+- The raw `struktur_folder.txt` dump (often multi‑MB and includes `venv/` / caches). Use `docs/folder-summary.txt` instead.
 
 Without the FBX clips the app can still wake, but the hologram has no motion.
 
@@ -80,7 +81,11 @@ The same process can also count fingers, read a page, apply camera filters, and 
 
 ## Standalone animations
 
-`animation/` is not started by a voice command. From the project folder, use dotted module names with `-m` (`python -m animation.string_art`) or run the file path (`python .\animation\string_art.py`). Do not pass a Windows relative path to `-m` (for example `python -m .\animation\string_art.py` fails). The shareable scripts are `aqua_mandala`, `ascii_reveal`, `botanical_lily`, `butterfly_curve`, `clover_art`, `cosmic_bloom`, `flower`, `koi_fish`, `make_a_wish`, `math_plate`, `neon_thread_heart`, `radar_scanner`, `rose_art`, `spiderman_particles`, `stippling_art`, and `string_art`.
+`animation/` is not started by a voice command. From the project folder, use dotted module names with `-m` (`python -m animation.string_art`) or run the file path (`python .\animation\string_art.py`). Do not pass a Windows relative path to `-m` (for example `python -m .\animation\string_art.py` fails).
+
+Primary shareable scripts: `aqua_mandala`, `ascii_reveal`, `botanical_lily`, `butterfly_curve`, `clover_art`, `cosmic_bloom`, `flower`, `koi_fish`, `make_a_wish`, `math_plate`, `neon_thread_heart`, `radar_scanner`, `rose_art`, `spiderman_particles`, `stippling_art`, and `string_art`.
+
+Additional sketches in the same folder: `blue_heart`, `colorful_spiral_art`, `cyan_spiral_circles`, `dandelion`, `digital_clock_ascii`, `fireworks`, `glowing_double_wing_symmetry`, `make_flower_video`, `rainbow_spiral_art`, `saturn`, `string_art_pentagon`, `sunflower_mandala`, and `tornado`.
 
 ```bat
 python -m animation.ascii_reveal --image path\to\image.jpg --out animation\reveal.mp4
@@ -89,7 +94,7 @@ python -m animation.stippling_art
 python animation\koi_fish.py
 ```
 
-`ascii_reveal` writes an mp4. The others open a window. `stippling_art` expects a local `monalisa.jpg` next to the script, and that image is not committed. Generated mp4 files are not committed.
+`ascii_reveal` writes an mp4. The others open a window. `stippling_art` expects a local reference image (for example under `animation/assets/`); those JPGs are not committed. Generated mp4 files are not committed. See [docs/folder-summary.txt](docs/folder-summary.txt) for a trimmed tree. Do not commit the full `struktur_folder.txt` dump.
 
 `animation/koi_fish.py` is a standalone pygame Realistic Living Koi Pond: `RealisticKoi` (full body/fins/barbels/3D shadow, 32-segment spine) on a procedural pond bed (depth gradient, stones) with caustics and swaying lily/lotus. Left click: ripples + feed pellets + attract; pellets disappear on contact. Right click: wider double ripples, no feed. Esc quits. Requires `pygame`.
 

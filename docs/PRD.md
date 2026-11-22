@@ -55,7 +55,15 @@ The whole phrase `hand bloom mode` turns the mode on. `hand bloom` and `hand blo
 
 ## Standalone animations
 
-`animation/` is a shared set of standalone scripts. They are not voice modes. Hand bloom is the assistant mode described above. From the project folder, run `python .\animation\<file>.py` or `python -m animation.<name>` with a dotted module name. A Windows relative path after `-m` (such as `python -m .\animation\string_art.py`) is not a module name and fails. `ascii_reveal` requires `--image` and `--out` and writes an mp4. The other scripts each open their own window: `aqua_mandala`, `botanical_lily`, `butterfly_curve`, `clover_art`, `cosmic_bloom`, `flower`, `koi_fish`, `make_a_wish`, `math_plate`, `neon_thread_heart`, `radar_scanner`, `rose_art`, `spiderman_particles`, `stippling_art`, and `string_art`. Closing a turtle window while the drawing is still running exits quietly. Generated mp4 files and `animation/monalisa.jpg` stay out of git. `stippling_art` looks for that image beside the script. `koi_fish` is a pygame Realistic Living Koi Pond (`python animation/koi_fish.py`): `RealisticKoi` with full body/fins/barbels/3D shadow and 32-segment spine; procedural pond bed (depth gradient, stones) plus caustics and swaying lily/lotus. Left click feeds pellets and attracts koi; right click makes wider ripples without feed. Esc quits.
+`animation/` is a shared set of standalone scripts. They are not voice modes. Hand bloom is the assistant mode described above. From the project folder, run `python .\animation\<file>.py` or `python -m animation.<name>` with a dotted module name. A Windows relative path after `-m` (such as `python -m .\animation\string_art.py`) is not a module name and fails.
+
+Primary shareable scripts: `aqua_mandala`, `ascii_reveal`, `botanical_lily`, `butterfly_curve`, `clover_art`, `cosmic_bloom`, `flower`, `koi_fish`, `make_a_wish`, `math_plate`, `neon_thread_heart`, `radar_scanner`, `rose_art`, `spiderman_particles`, `stippling_art`, and `string_art`.
+
+Additional standalone sketches in the same folder: `blue_heart`, `colorful_spiral_art`, `cyan_spiral_circles`, `dandelion`, `digital_clock_ascii`, `fireworks`, `glowing_double_wing_symmetry`, `make_flower_video`, `rainbow_spiral_art`, `saturn`, `string_art_pentagon`, `sunflower_mandala`, and `tornado`. Local backups such as `stippling_art backup.py` stay out of git.
+
+`ascii_reveal` requires `--image` and `--out` and writes an mp4. The other scripts each open their own window. Closing a turtle window while the drawing is still running exits quietly. Generated mp4 files, `animation/monalisa.jpg`, and `animation/assets/*.jpg` stay out of git. `stippling_art` looks for a local reference image (for example under `animation/assets/`). `koi_fish` is a pygame Realistic Living Koi Pond (`python animation/koi_fish.py`): `RealisticKoi` with full body/fins/barbels/3D shadow and 32-segment spine; procedural pond bed (depth gradient, stones) plus caustics and swaying lily/lotus. Left click feeds pellets and attracts koi; right click makes wider ripples without feed. Esc quits.
+
+A trimmed inventory lives in [folder-summary.txt](folder-summary.txt). The full `struktur_folder.txt` dump (venv, caches, weights) is gitignored.
 
 ## CCTV speed tracker
 

@@ -1,0 +1,108 @@
+﻿Asmamir Computer Vision — folder summary (trimmed)
+Generated: 2026-11-22
+Omits: venv/, .venv/, __pycache__/, models/**, dataset/**, dataset_aug/**, *.pt, *.mp4, *.wav, .env, struktur_folder.txt (full dump).
+Purpose: safe inventory for docs sync. Prefer this file over committing struktur_folder.txt.
+
+Root files:
+  .gitignore
+  app.py
+  augment_fruits.py
+  README.md
+  requirements.txt
+  SECURITY.md
+  train_fruits.py
+
+animation/  (standalone scripts; not voice modes)
+  __init__.py
+  aqua_mandala.py
+  ascii_reveal.py
+  blue_heart.py
+  botanical_lily.py
+  butterfly_curve.py
+  clover_art.py
+  colorful_spiral_art.py
+  cosmic_bloom.py
+  cyan_spiral_circles.py
+  dandelion.py
+  digital_clock_ascii.py
+  fireworks.py
+  flower.py
+  glowing_double_wing_symmetry.py
+  koi_fish.py
+  make_a_wish.py
+  make_flower_video.py
+  math_plate.py
+  neon_thread_heart.py
+  radar_scanner.py
+  rainbow_spiral_art.py
+  rose_art.py
+  saturn.py
+  spiderman_particles.py
+  stippling_art.py
+  string_art.py
+  string_art_pentagon.py
+  sunflower_mandala.py
+  tornado.py
+  (local only): stippling_art backup.py — not for share
+  assets/
+    spiderman-ref.png
+    (local only, not committed): monalisa.jpg, sakura.jpg
+
+cctv/  (standalone speed tracker; not a voice mode)
+  cctv_speed_tracker.py
+  (local only, gitignored): sample_traffic*.mp4, output_speed.mp4, speed_log.csv, other clips
+
+docs/
+  DOKUMENTASI.md
+  PRD.md
+  SRS.md
+
+scripts/
+  Asmamir Computer Vision.lnk.not-startup
+  start_dsh.cmd
+  start_dsh.ps1
+  start_login.cmd
+  start_login.ps1
+
+tools/  (helper utilities; ketik audio gitignored)
+  animasi.py
+  auto_type.py
+  auto_type_skip_typing.py
+  click_sound.py
+  ketik.py
+  type_for_video.py
+
+web/  (top-level entries; FBX/GLB/textures/source/airbus/deagle gitignored)
+  airbus_cv.py
+  anime_board.html
+  anime_cv.py
+  anime_region.py
+  cad_orbit.js
+  canvas_cv.py
+  clap_wake.py
+  close_tabs.py
+  deagle_cv.py
+  dragon_cv.py
+  filter_cv.py
+  fog_cv.py
+  hand_bloom.py
+  hologram_cv.py
+  hologram_dance.py
+  hologram_fbx.py
+  hologram_gl.py
+  hologram_mesh.py
+  hologram_orbit.py
+  open_apps.py
+  p5.min.js
+  pointer_hands.py
+  serve.py
+  wechat_actions.py
+  youtube_play.py
+  hologram/  (FBX + textures gitignored)
+  dragon/
+  (gitignored dirs): airbus/, deagle/
+
+Gitignored directories (present locally, not listed in detail): models/, dataset/, dataset_aug/, venv/, .vscode/
+
+Key Python deps snapshot (from requirements.txt; CUDA wheels local):
+  opencv-python, mediapipe, numpy, vosk, pygame, ultralytics, torch(+cu), pillow, mss, PyAudio, ...

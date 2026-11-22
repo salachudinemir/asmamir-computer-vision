@@ -12,7 +12,7 @@ dataset_aug/
 *.fbx
 *.glb
 *.usdz
-*.npz
+*.gltf
 *.rar
 *.zip
 web/hologram/textures/
@@ -30,6 +30,16 @@ web/deagle/
 *.lnk
 *.lnk.not-startup
 animation/monalisa.jpg
+animation/assets/*.jpg
+animation/assets/*.jpeg
 animation/assets/*.mp4
 animation/assets/*.gif
+animation/*backup*
+animation/* backup.py
 tools/animasi.py
+# Local dumps / weights / CCTV artifacts
+struktur_folder.txt
+yolov8*.pt
+*.pt
+cctv/speed_log.csv
+cctv/*.csv

@@ -5,16 +5,24 @@ Ideas inspired by nagomi (https://github.com/msk1039/nagomi, PolyForm Noncommerc
 click-to-call, scatter, ripples, swim-state variety, and depth cues. This file is an
 independent pygame implementation; it does not copy nagomi's TypeScript/Three.js source.
 
+Optional full-pond MP4 overlay (checkerboard-keyed) sits under the procedural fish when
+`animation/assets/koi_fish_swimming_animated_overlay.mp4` is present. Missing file or
+`--no-overlay` falls back to procedural-only.
+
 Run:
     python animation/koi_fish.py
+    python animation/koi_fish.py --no-overlay
 """
 
 from __future__ import annotations
 
+import argparse
 import math
 import os
 import random
+import sys
 from enum import Enum, auto
+from pathlib import Path
 
 import pygame
 
@@ -28,6 +36,145 @@ pygame.display.set_caption("Realistic Living Koi Pond")
 clock = pygame.time.Clock()
 HINT_FONT = pygame.font.SysFont("segoeui", 16)
 HINT_FADE_S = 12.0
+
+_ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+DEFAULT_OVERLAY_MP4 = _ASSETS_DIR / "koi_fish_swimming_animated_overlay.mp4"
+# Soft opacity for the keyed overlay so procedural fish stay readable on top.
+OVERLAY_OPACITY = 0.88
+
+
+def _try_import_cv2():
+    try:
+        import cv2  # type: ignore
+
+        return cv2
+    except ImportError:
+        return None
+
+
+def _key_checkerboard_bgr(frame_bgr, chroma_max: float = 18.0, gray_lo: float = 15.0, gray_hi: float = 95.0):
+    """Build a soft alpha mask that removes a dark gray/black checkerboard plate.
+
+    The overlay MP4 has no real alpha channel; transparency is encoded as a
+    checkerboard (near-achromatic mid-dark grays). Colored / bright fish pixels
+    and soft shadows outside that band are kept.
+    """
+    import numpy as np
+
+    b = frame_bgr[:, :, 0].astype(np.float32)
+    g = frame_bgr[:, :, 1].astype(np.float32)
+    r = frame_bgr[:, :, 2].astype(np.float32)
+    mx = np.maximum(np.maximum(r, g), b)
+    mn = np.minimum(np.minimum(r, g), b)
+    chroma = mx - mn
+    gray = (r + g + b) * (1.0 / 3.0)
+    hard = (chroma < chroma_max) & (gray > gray_lo) & (gray < gray_hi)
+    hard_u8 = (hard.astype(np.uint8) * 255)
+    cv2 = _try_import_cv2()
+    if cv2 is not None:
+        hard_u8 = cv2.dilate(hard_u8, np.ones((3, 3), np.uint8), iterations=1)
+        alpha = 255 - hard_u8
+        alpha = cv2.GaussianBlur(alpha, (5, 5), 0)
+    else:
+        alpha = np.where(hard, np.uint8(0), np.uint8(255))
+    return alpha
+
+
+class KoiOverlayVideo:
+    """Decode a looping MP4 and blit it as a keyed full-pond overlay."""
+
+    def __init__(self, path: Path, size: tuple[int, int], opacity: float = OVERLAY_OPACITY):
+        self.path = Path(path)
+        self.size = size
+        self.opacity = max(0.0, min(1.0, opacity))
+        self.enabled = True
+        self._cap = None
+        self._cv2 = None
+        self._fps = 30.0
+        self._frame_count = 0
+        self._accum = 0.0
+        self._surface: pygame.Surface | None = None
+        self._ok = False
+        self._open()
+
+    @property
+    def available(self) -> bool:
+        return self._ok
+
+    def _open(self) -> None:
+        if not self.path.is_file():
+            return
+        self._cv2 = _try_import_cv2()
+        if self._cv2 is None:
+            print(f"[koi] OpenCV unavailable; skipping overlay {self.path.name}", file=sys.stderr)
+            return
+        cap = self._cv2.VideoCapture(str(self.path))
+        if not cap.isOpened():
+            print(f"[koi] Could not open overlay video: {self.path}", file=sys.stderr)
+            return
+        fps = float(cap.get(self._cv2.CAP_PROP_FPS) or 0.0)
+        self._fps = fps if fps > 1.0 else 30.0
+        self._frame_count = int(cap.get(self._cv2.CAP_PROP_FRAME_COUNT) or 0)
+        self._cap = cap
+        if not self._decode_next():
+            self.close()
+            return
+        self._ok = True
+        print(f"[koi] Overlay on: {self.path.name} ({self._frame_count} frames @ {self._fps:.1f} fps)")
+
+    def close(self) -> None:
+        if self._cap is not None:
+            self._cap.release()
+            self._cap = None
+        self._ok = False
+
+    def _bgr_to_surface(self, frame_bgr) -> pygame.Surface:
+        import numpy as np
+
+        cv2 = self._cv2
+        assert cv2 is not None
+        tw, th = self.size
+        if frame_bgr.shape[1] != tw or frame_bgr.shape[0] != th:
+            frame_bgr = cv2.resize(frame_bgr, (tw, th), interpolation=cv2.INTER_AREA)
+        alpha = _key_checkerboard_bgr(frame_bgr)
+        if self.opacity < 1.0:
+            alpha = (alpha.astype(np.float32) * self.opacity).astype(np.uint8)
+        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        rgba = np.dstack((rgb, alpha))
+        surf = pygame.image.frombuffer(rgba.tobytes(), (tw, th), "RGBA").convert_alpha()
+        # frombuffer aliases the buffer; copy so the next decode cannot mutate the blit.
+        return surf.copy()
+
+    def _decode_next(self) -> bool:
+        if self._cap is None or self._cv2 is None:
+            return False
+        ok, frame = self._cap.read()
+        if not ok or frame is None:
+            self._cap.set(self._cv2.CAP_PROP_POS_FRAMES, 0)
+            ok, frame = self._cap.read()
+            if not ok or frame is None:
+                return False
+        self._surface = self._bgr_to_surface(frame)
+        return True
+
+    def update(self, dt: float) -> None:
+        if not self._ok or not self.enabled or self._cap is None:
+            return
+        self._accum += dt
+        step = 1.0 / self._fps
+        advanced = False
+        while self._accum >= step:
+            self._accum -= step
+            if not self._decode_next():
+                self._ok = False
+                return
+            advanced = True
+        if not advanced and self._surface is None:
+            self._decode_next()
+
+    def draw(self, surf: pygame.Surface) -> None:
+        if self._ok and self.enabled and self._surface is not None:
+            surf.blit(self._surface, (0, 0))
 
 
 class SwimState(Enum):
@@ -591,7 +738,7 @@ def draw_hint(surf, elapsed):
         return
     lines = [
         "Click / tap — call the koi",
-        "Space — scatter    Esc — quit",
+        "Space — scatter    O — overlay    Esc — quit",
     ]
     pad_x, pad_y = 14, 10
     rendered = [HINT_FONT.render(line, True, (220, 240, 250)) for line in lines]
@@ -608,8 +755,35 @@ def draw_hint(surf, elapsed):
     surf.blit(box, (18, 16))
 
 
-def main():
+def _parse_args(argv: list[str] | None = None):
+    parser = argparse.ArgumentParser(description="Standalone pygame koi pond")
+    parser.add_argument(
+        "--overlay",
+        type=Path,
+        default=DEFAULT_OVERLAY_MP4,
+        help="MP4 full-pond overlay path (checkerboard-keyed)",
+    )
+    parser.add_argument(
+        "--no-overlay",
+        action="store_true",
+        help="Procedural fish only (ignore overlay MP4)",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None):
+    args = _parse_args(argv)
     pond_bed = create_pond_bed()
+
+    overlay = None
+    if not args.no_overlay:
+        candidate = Path(args.overlay)
+        if candidate.is_file():
+            overlay = KoiOverlayVideo(candidate, (W, H), opacity=OVERLAY_OPACITY)
+            if not overlay.available:
+                overlay = None
+        else:
+            print(f"[koi] Overlay file missing ({candidate}); procedural-only.", file=sys.stderr)
 
     kois = [
         RealisticKoi(420, 310, 0.3, 105, 1.18, "kohaku"),
@@ -624,68 +798,80 @@ def main():
     sim_time = 0.0
 
     running = True
-    while running:
-        dt = clock.tick(60) / 1000.0
-        sim_time += dt
+    try:
+        while running:
+            dt = clock.tick(60) / 1000.0
+            sim_time += dt
 
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
                     running = False
-                elif event.key == pygame.K_SPACE:
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        running = False
+                    elif event.key == pygame.K_SPACE:
+                        for k in kois:
+                            k.scatter()
+                        # Soft surface ripples near each fish when they scatter.
+                        for k in kois:
+                            ripples.append(Ripple(k.x, k.y, max_r=90, strength=0.7))
+                    elif event.key == pygame.K_o and overlay is not None and overlay.available:
+                        overlay.enabled = not overlay.enabled
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    mx, my = event.pos
+                    ripples.append(Ripple(mx, my, max_r=140, strength=1.15))
                     for k in kois:
-                        k.scatter()
-                    # Soft surface ripples near each fish when they scatter.
-                    for k in kois:
-                        ripples.append(Ripple(k.x, k.y, max_r=90, strength=0.7))
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                mx, my = event.pos
-                ripples.append(Ripple(mx, my, max_r=140, strength=1.15))
-                for k in kois:
-                    k.attract_to(mx, my)
+                        k.attract_to(mx, my)
 
-        screen.blit(pond_bed, (0, 0))
+            screen.blit(pond_bed, (0, 0))
 
-        # Draw deeper fish first so nearer fish sit on top.
-        for k in sorted(kois, key=lambda fish: fish.depth, reverse=True):
-            k.update(dt)
-            k.draw(screen)
+            # Full-pond keyed MP4 under the interactive procedural fish.
+            if overlay is not None:
+                overlay.update(dt)
+                overlay.draw(screen)
 
-        # Occasional ripples from near-surface fish motion.
-        ripple_timer += dt
-        if ripple_timer > 0.75:
-            ripple_timer = 0.0
-            candidates = [k for k in kois if k.depth < 0.55] or kois
-            chosen = random.choice(candidates)
-            ripples.append(Ripple(chosen.x, chosen.y, max_r=85, strength=0.55 + (1.0 - chosen.depth) * 0.35))
+            # Draw deeper fish first so nearer fish sit on top.
+            for k in sorted(kois, key=lambda fish: fish.depth, reverse=True):
+                k.update(dt)
+                k.draw(screen)
 
-        # Soft ambient surface ripples (wind / drip feel).
-        surface_ripple_timer += dt
-        if surface_ripple_timer > 2.8:
-            surface_ripple_timer = random.uniform(0.0, 0.6)
-            ripples.append(
-                Ripple(
-                    random.uniform(80, W - 80),
-                    random.uniform(80, H - 80),
-                    max_r=random.uniform(50, 90),
-                    strength=0.35,
+            # Occasional ripples from near-surface fish motion.
+            ripple_timer += dt
+            if ripple_timer > 0.75:
+                ripple_timer = 0.0
+                candidates = [k for k in kois if k.depth < 0.55] or kois
+                chosen = random.choice(candidates)
+                ripples.append(
+                    Ripple(chosen.x, chosen.y, max_r=85, strength=0.55 + (1.0 - chosen.depth) * 0.35)
                 )
-            )
 
-        for r in ripples[:]:
-            r.update(dt)
-            r.draw(screen)
-            if r.alpha <= 2:
-                ripples.remove(r)
+            # Soft ambient surface ripples (wind / drip feel).
+            surface_ripple_timer += dt
+            if surface_ripple_timer > 2.8:
+                surface_ripple_timer = random.uniform(0.0, 0.6)
+                ripples.append(
+                    Ripple(
+                        random.uniform(80, W - 80),
+                        random.uniform(80, H - 80),
+                        max_r=random.uniform(50, 90),
+                        strength=0.35,
+                    )
+                )
 
-        draw_water_surface(screen, sim_time)
-        draw_hint(screen, sim_time)
+            for r in ripples[:]:
+                r.update(dt)
+                r.draw(screen)
+                if r.alpha <= 2:
+                    ripples.remove(r)
 
-        pygame.display.flip()
+            draw_water_surface(screen, sim_time)
+            draw_hint(screen, sim_time)
 
-    pygame.quit()
+            pygame.display.flip()
+    finally:
+        if overlay is not None:
+            overlay.close()
+        pygame.quit()
 
 
 if __name__ == "__main__":

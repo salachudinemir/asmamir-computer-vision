@@ -1,18 +1,21 @@
 """
-Standalone pygame koi pond.
+Standalone pygame pixel koi pond.
 
-Default: interactive RealisticKoi (click-call, Space scatter, ripples, swim states,
-depth) drawn with keyed fish sprites extracted from the local overlay MP4 when present.
-Procedural vector draw is the fallback if the asset or OpenCV is missing, or when
-sprites are toggled off (`--procedural` / `P`).
+Dark-navy aquarium with nearest-neighbor pixel koi (Kohaku / Asagi / Yamabuki
+and kin), soft slow swim, lily pads, and pink lotus. Interactive: click/tap
+calls fish, Space scatters, ripples on the surface.
 
-Optional full-pond MP4 overlay (`--overlay` or `O`) still hides interactive fish while
-active. Smooth 60 FPS with SCALED + vsync when available.
+Look & swim ideas inspired by git-koi-aquarium
+(https://github.com/reginaldalfret/git-koi-aquarium, MIT) — stroke/glide beats,
+variety coats, fish under botanicals, calm spacing — rewritten as original
+pygame code (not a port or wholesale copy).
+
+Optional full-pond keyed MP4 overlay (`--overlay` / `O`) still available;
+pixel interactive fish are the default.
 
 Run:
     python animation/koi_fish.py
     python animation/koi_fish.py --fullscreen
-    python animation/koi_fish.py --procedural
     python animation/koi_fish.py --overlay
 """
 
@@ -28,41 +31,84 @@ from pathlib import Path
 
 import pygame
 
-# Center the window on the laptop display.
 os.environ["SDL_VIDEO_CENTERED"] = "1"
 
 pygame.init()
 W, H = 1150, 720
-# Display is created in main() so --fullscreen / F11 can recreate it with SCALED+vsync.
 screen: pygame.Surface | None = None
 clock = pygame.time.Clock()
 HINT_FONT = pygame.font.SysFont("segoeui", 16)
 HINT_FADE_S = 12.0
 
 _ASSETS_DIR = Path(__file__).resolve().parent / "assets"
-DEFAULT_OVERLAY_MP4 = _ASSETS_DIR / "koi_fish_swimming_animated_overlay.mp4"
-# Full opacity when optional overlay mode is active (procedural fish hidden).
+DEFAULT_MP4_PATH = _ASSETS_DIR / "koi_fish_swimming_animated_overlay.mp4"
 OVERLAY_OPACITY = 1.0
-# Soft cap for the keyed Surface cache (~474 MiB for 150 frames @ 1150x720 RGBA).
 OVERLAY_CACHE_MAX_MB = 700.0
-# Sprite bank: fish crops from the same MP4 (default look for RealisticKoi).
-SPRITE_MAX_COUNT = 28
-SPRITE_FRAME_STRIDE = 8
-SPRITE_MIN_AREA = 28_000
-SPRITE_MAX_AREA = 185_000
-SPRITE_TARGET_LENGTH = 220.0  # normalize crops before per-fish scaling
-# After canonicalize, every surface faces +X (nose right). Draw uses flip L/R + pitch.
-SPRITE_CANON_HEADING = 0.0  # radians; nose along +X
-SPRITE_CYCLE_LEN = 6  # swim-pose window per fish (stable base + nearby frames)
-SPRITE_CYCLE_RATE = 0.95  # swim phase → frame advance (tied to undulation)
-# Soft visual heading (lerp/slew) so sprite pitch never snap-turns with physics.
-HEADING_SLEW_RATE = 2.6  # rad/s toward physics angle (cruise)
-HEADING_SLEW_FAST = 4.8  # rad/s during burst / call
-# L/R flip only when clearly horizontal; cooldown stops flip-flap near vertical.
-FACE_FLIP_COS = 0.48
-FACE_FLIP_SIN_MAX = 0.52
-FACE_FLIP_COOLDOWN_S = 0.65
-SPINE_BEND_GAIN = 0.32  # mid-spine vs head → extra pitch (subtle body curve)
+
+# Pixel atlas: paint at low res, scale with nearest-neighbor.
+PIXEL_SCALE = 4
+PIXEL_BODY_W = 40
+PIXEL_BODY_H = 18
+SWIM_FRAMES = 6
+HEADING_SLEW = 1.55
+HEADING_SLEW_FAST = 3.2
+FACE_FLIP_COS = 0.42
+FACE_FLIP_SIN_MAX = 0.55
+FACE_FLIP_CD = 0.7
+SEPARATION_RADIUS = 110.0
+SEPARATION_GAIN = 55.0
+
+# Palette inspired by classic Japanese morphs (original RGB choices).
+PALETTES: dict[str, dict[str, tuple[int, int, int]]] = {
+    "kohaku": {
+        "ground": (244, 246, 250),
+        "edge": (170, 180, 198),
+        "mark": (228, 58, 52),
+        "mark2": (242, 110, 48),
+        "fin": (236, 240, 248),
+        "eye": (18, 20, 28),
+    },
+    "asagi": {
+        "ground": (78, 108, 148),
+        "edge": (42, 58, 92),
+        "mark": (248, 120, 52),
+        "mark2": (220, 78, 48),
+        "fin": (236, 132, 72),
+        "eye": (16, 18, 26),
+    },
+    "yamabuki": {
+        "ground": (252, 196, 64),
+        "edge": (196, 118, 36),
+        "mark": (255, 232, 120),
+        "mark2": (255, 248, 200),
+        "fin": (254, 210, 90),
+        "eye": (28, 22, 18),
+    },
+    "ogon": {
+        "ground": (220, 230, 240),
+        "edge": (140, 156, 178),
+        "mark": (250, 252, 255),
+        "mark2": (190, 205, 220),
+        "fin": (236, 242, 250),
+        "eye": (22, 24, 32),
+    },
+    "karasu": {
+        "ground": (32, 34, 48),
+        "edge": (18, 20, 30),
+        "mark": (58, 64, 88),
+        "mark2": (90, 98, 120),
+        "fin": (48, 52, 70),
+        "eye": (200, 190, 170),
+    },
+    "chagoi": {
+        "ground": (168, 108, 72),
+        "edge": (96, 58, 42),
+        "mark": (210, 150, 96),
+        "mark2": (120, 72, 48),
+        "fin": (184, 120, 80),
+        "eye": (24, 18, 16),
+    },
+}
 
 
 def _try_import_cv2():
@@ -75,7 +121,6 @@ def _try_import_cv2():
 
 
 def _create_display(fullscreen: bool) -> pygame.Surface:
-    """Logical (W, H) buffer; SDL SCALED letterboxes/covers the real desktop."""
     flags = pygame.SCALED | pygame.DOUBLEBUF
     if fullscreen:
         flags |= pygame.FULLSCREEN
@@ -83,17 +128,145 @@ def _create_display(fullscreen: bool) -> pygame.Surface:
         surf = pygame.display.set_mode((W, H), flags, vsync=1)
     except TypeError:
         surf = pygame.display.set_mode((W, H), flags)
-    pygame.display.set_caption("Realistic Living Koi Pond")
+    pygame.display.set_caption("Pixel Koi Pond")
     return surf
 
 
-def _key_checkerboard_bgr(frame_bgr, chroma_max: float = 18.0, gray_lo: float = 15.0, gray_hi: float = 95.0):
-    """Build a soft alpha mask that removes a dark gray/black checkerboard plate.
+def _norm_pi(a: float) -> float:
+    return (a + math.pi) % (2 * math.pi) - math.pi
 
-    The overlay MP4 has no real alpha channel; transparency is encoded as a
-    checkerboard (near-achromatic mid-dark grays). Colored / bright fish pixels
-    and soft shadows outside that band are kept.
-    """
+
+def _lerp(a: float, b: float, t: float) -> float:
+    return a + (b - a) * t
+
+
+def _body_half_width(t: float) -> float:
+    if t < 0.12:
+        return 0.22 + 0.55 * (t / 0.12)
+    if t < 0.55:
+        return 0.78 + 0.22 * math.sin(((t - 0.12) / 0.43) * math.pi)
+    u = (t - 0.55) / 0.45
+    return max(0.12, 0.78 * (1.0 - u) ** 0.85)
+
+
+def _paint_pixel_koi(variety: str, frame: int, seed: int) -> pygame.Surface:
+    """Paint one low-res koi frame facing +X; nearest-neighbor scale up."""
+    pal = PALETTES.get(variety, PALETTES["kohaku"])
+    bw, bh = PIXEL_BODY_W, PIXEL_BODY_H
+    raw = pygame.Surface((bw, bh), pygame.SRCALPHA)
+    rng = random.Random(seed * 7919 + frame * 17)
+    cy = bh // 2
+    wag = math.sin((frame / max(1, SWIM_FRAMES - 1)) * math.pi * 2.0) * 1.15
+    fin_flare = 0.55 + 0.45 * abs(math.sin((frame / max(1, SWIM_FRAMES - 1)) * math.pi))
+
+    # Tail fork
+    for k in range(7):
+        u = k / 6.0
+        spread = (u - 0.5) * 10.0 * fin_flare
+        tx = int(2 + u * 5)
+        ty = int(cy + spread + wag * (0.4 + u))
+        col = pal["fin"] if k % 2 == 0 else pal["edge"]
+        if 0 <= tx < bw and 0 <= ty < bh:
+            raw.set_at((tx, ty), (*col, 230))
+            if 0 <= ty + 1 < bh:
+                raw.set_at((tx, ty + 1), (*pal["fin"], 160))
+
+    # Body + markings
+    for x in range(6, bw - 2):
+        t = (x - 6) / float(bw - 8)
+        half = _body_half_width(t) * (bh * 0.42)
+        y_off = wag * (t ** 1.4) * 1.6
+        y0 = int(cy - half + y_off)
+        y1 = int(cy + half + y_off)
+        for y in range(max(0, y0), min(bh, y1 + 1)):
+            lat = (y - (cy + y_off)) / max(0.5, half)
+            if abs(lat) > 0.78:
+                c = pal["edge"]
+            else:
+                c = pal["ground"]
+                if variety == "kohaku":
+                    if 0.08 < t < 0.78 and abs(lat - ((seed % 5) - 2) * 0.08) < 0.55:
+                        plate = math.sin(t * 9.0 + seed) * 0.35 + math.sin(lat * 5.0)
+                        if plate > 0.15 and (hash((seed, int(t * 12), int(lat * 8))) % 7) != 0:
+                            c = pal["mark"] if plate > 0.45 else pal["mark2"]
+                elif variety == "asagi":
+                    if abs(lat) < 0.55 and t > 0.1:
+                        if (int(t * 18) + int((lat + 1) * 9)) % 3 == 0:
+                            c = pal["edge"]
+                        else:
+                            c = pal["ground"]
+                    if lat > 0.55:
+                        c = pal["mark"]
+                elif variety == "yamabuki":
+                    if abs(lat) < 0.35 and 0.2 < t < 0.55:
+                        c = pal["mark"]
+                elif variety == "ogon":
+                    if abs(lat) < 0.25 and 0.25 < t < 0.45:
+                        c = pal["mark"]
+                elif variety == "karasu":
+                    if (int(t * 14) ^ int(abs(lat) * 10)) & 1:
+                        c = pal["mark"]
+                elif variety == "chagoi":
+                    if abs(lat) < 0.4 and rng.random() < 0.35:
+                        c = pal["mark"]
+            if lat < -0.15 and abs(lat) < 0.55 and t < 0.85:
+                c = tuple(min(255, int(ch + 18)) for ch in c)
+            raw.set_at((x, y), (*c, 255))
+
+    # Pectoral fins
+    px = int(6 + 0.28 * (bw - 8))
+    for side in (-1, 1):
+        for i in range(5):
+            fx = px + i // 2
+            fy = int(cy + side * (3 + i * 0.9 * fin_flare) + wag * 0.3)
+            if 0 <= fx < bw and 0 <= fy < bh:
+                raw.set_at((fx, fy), (*pal["fin"], 210))
+
+    # Eye
+    ex = int(6 + 0.88 * (bw - 8))
+    ey = cy - 2
+    if 0 <= ex < bw and 0 <= ey < bh:
+        raw.set_at((ex, ey), (*pal["eye"], 255))
+        if ey + 1 < bh:
+            raw.set_at((ex, ey + 1), (255, 255, 255, 200))
+
+    # Barbel hint
+    for i in range(3):
+        wx = ex + 1 + i // 2
+        wy = ey + 1 + i
+        if 0 <= wx < bw and 0 <= wy < bh:
+            raw.set_at((wx, wy), (*pal["edge"], 180))
+
+    scaled = pygame.transform.scale(raw, (bw * PIXEL_SCALE, bh * PIXEL_SCALE))
+    # convert_alpha needs a display mode; skip until main() creates one.
+    if pygame.display.get_surface() is not None:
+        return scaled.convert_alpha()
+    return scaled
+
+
+class PixelKoiAtlas:
+    def __init__(self):
+        self._frames: dict[str, list[pygame.Surface]] = {}
+        for name in PALETTES:
+            seed = sum(ord(c) for c in name) * 13
+            self._frames[name] = [
+                _paint_pixel_koi(name, f, seed) for f in range(SWIM_FRAMES)
+            ]
+
+    def frame(self, variety: str, phase: float) -> pygame.Surface:
+        frames = self._frames.get(variety) or self._frames["kohaku"]
+        n = len(frames)
+        t = (phase * 0.55) % (2.0 * (n - 1))
+        idx = int(t) if t <= (n - 1) else int(2.0 * (n - 1) - t)
+        return frames[max(0, min(n - 1, idx))]
+
+
+def _key_video_frame_bgr(
+    frame_bgr,
+    chroma_max: float = 20.0,
+    gray_lo: float = 12.0,
+    gray_hi: float = 105.0,
+):
     import numpy as np
 
     b = frame_bgr[:, :, 0].astype(np.float32)
@@ -103,234 +276,21 @@ def _key_checkerboard_bgr(frame_bgr, chroma_max: float = 18.0, gray_lo: float = 
     mn = np.minimum(np.minimum(r, g), b)
     chroma = mx - mn
     gray = (r + g + b) * (1.0 / 3.0)
-    hard = (chroma < chroma_max) & (gray > gray_lo) & (gray < gray_hi)
-    hard_u8 = (hard.astype(np.uint8) * 255)
+    dark_bg = (chroma < chroma_max) & (gray < gray_hi) & (gray > gray_lo)
+    pure_black_bg = gray <= gray_lo
+    bg_mask = dark_bg | pure_black_bg
+    hard_u8 = bg_mask.astype(np.uint8) * 255
     cv2 = _try_import_cv2()
     if cv2 is not None:
-        hard_u8 = cv2.dilate(hard_u8, np.ones((3, 3), np.uint8), iterations=1)
+        hard_u8 = cv2.erode(hard_u8, np.ones((2, 2), np.uint8), iterations=1)
         alpha = 255 - hard_u8
         alpha = cv2.GaussianBlur(alpha, (5, 5), 0)
     else:
-        alpha = np.where(hard, np.uint8(0), np.uint8(255))
+        alpha = np.where(bg_mask, np.uint8(0), np.uint8(255))
     return alpha
 
 
-class KoiSpriteBank:
-    """Keyed fish crops from the overlay MP4 for blitting onto RealisticKoi.
-
-    Every stored surface is canonicalized so the nose faces +X (right). Draw-time
-    code slews visual heading, gates L/R flips (no vertical flip-flap), cycles
-    frames from swim phase, and may add a light spine-bend pitch.
-    """
-
-    def __init__(
-        self,
-        path: Path,
-        max_sprites: int = SPRITE_MAX_COUNT,
-        frame_stride: int = SPRITE_FRAME_STRIDE,
-    ):
-        self.path = Path(path)
-        # (surface facing +X, body_length_px)
-        self._sprites: list[tuple[pygame.Surface, float]] = []
-        self._ok = False
-        self._open(max_sprites=max_sprites, frame_stride=frame_stride)
-
-    @property
-    def available(self) -> bool:
-        return self._ok and bool(self._sprites)
-
-    def __len__(self) -> int:
-        return len(self._sprites)
-
-    def close(self) -> None:
-        self._sprites.clear()
-        self._ok = False
-
-    def pick(self, fish_index: int, phase: float) -> tuple[pygame.Surface, float] | None:
-        """Return (surface facing +X, body_length_px) cycled by swim phase.
-
-        Stable per-fish base; ping-pong through a short nearby window so the
-        wrap from last→first does not pop. Phase is RealisticKoi.phase.
-        """
-        if not self.available:
-            return None
-        n = len(self._sprites)
-        cycle_len = min(SPRITE_CYCLE_LEN, n)
-        base = (fish_index * cycle_len) % n
-        if cycle_len <= 1:
-            return self._sprites[base % n]
-        # Ping-pong 0..cycle_len-1..0 driven by swim phase.
-        span = cycle_len - 1
-        t = (phase * SPRITE_CYCLE_RATE) % (2.0 * span)
-        step = int(t) if t <= span else int(2.0 * span - t)
-        step = max(0, min(span, step))
-        idx = (base + step) % n
-        return self._sprites[idx]
-
-    def _open(self, max_sprites: int, frame_stride: int) -> None:
-        if not self.path.is_file():
-            return
-        cv2 = _try_import_cv2()
-        if cv2 is None:
-            print(f"[koi] OpenCV unavailable; sprite bank skipped ({self.path.name}).", file=sys.stderr)
-            return
-        import numpy as np
-
-        print(f"[koi] Extracting fish sprites from {self.path.name}…", file=sys.stderr)
-        cap = cv2.VideoCapture(str(self.path))
-        if not cap.isOpened():
-            print(f"[koi] Could not open sprite source: {self.path}", file=sys.stderr)
-            return
-
-        sprites: list[tuple[pygame.Surface, float]] = []
-        frame_i = 0
-        while len(sprites) < max_sprites:
-            ok, frame = cap.read()
-            if not ok or frame is None:
-                break
-            if frame_i % max(1, frame_stride) != 0:
-                frame_i += 1
-                continue
-            frame_i += 1
-            alpha = _key_checkerboard_bgr(frame)
-            binm = (alpha > 128).astype(np.uint8)
-            binm = cv2.morphologyEx(binm, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8), iterations=1)
-            num, labels, stats, _centroids = cv2.connectedComponentsWithStats(binm, 8)
-            # Largest fish first so we keep the best crops when capping.
-            order = sorted(
-                range(1, num),
-                key=lambda i: int(stats[i, cv2.CC_STAT_AREA]),
-                reverse=True,
-            )
-            for i in order:
-                if len(sprites) >= max_sprites:
-                    break
-                area = int(stats[i, cv2.CC_STAT_AREA])
-                bw = int(stats[i, cv2.CC_STAT_WIDTH])
-                bh = int(stats[i, cv2.CC_STAT_HEIGHT])
-                if area < SPRITE_MIN_AREA or area > SPRITE_MAX_AREA:
-                    continue
-                if max(bw, bh) < 140:
-                    continue
-                aspect = max(bw, bh) / max(1, min(bw, bh))
-                # Merged two-fish blobs are near-square and huge — skip.
-                if aspect < 1.18 and area > 150_000:
-                    continue
-                cropped = self._crop_component(frame, alpha, labels, stats, i, cv2, np)
-                if cropped is None:
-                    continue
-                rgba, heading, _length = cropped
-                surf = self._rgba_to_surface(rgba, target_length=SPRITE_TARGET_LENGTH)
-                if surf is None:
-                    continue
-                canon = self._canonicalize_facing(surf, heading)
-                if canon is None:
-                    continue
-                # Length after normalize ≈ SPRITE_TARGET_LENGTH; nose faces +X.
-                sprites.append((canon, float(SPRITE_TARGET_LENGTH)))
-
-        cap.release()
-        if not sprites:
-            print(f"[koi] No fish sprites extracted from {self.path.name}.", file=sys.stderr)
-            return
-        self._sprites = sprites
-        self._ok = True
-        print(
-            f"[koi] Sprite bank ready: {len(sprites)} keyed crops "
-            f"(canonical +X facing, cycle {min(SPRITE_CYCLE_LEN, len(sprites))}).",
-            file=sys.stderr,
-        )
-
-    @staticmethod
-    def _canonicalize_facing(surf: pygame.Surface, heading: float) -> pygame.Surface | None:
-        """Rotate so the nose points along +X (SPRITE_CANON_HEADING)."""
-        # pygame.rotozoom: positive degrees = CCW. Image coords share atan2 (Y down).
-        rot_deg = -math.degrees(heading - SPRITE_CANON_HEADING)
-        try:
-            out = pygame.transform.rotozoom(surf, rot_deg, 1.0)
-        except pygame.error:
-            return None
-        return out.convert_alpha()
-
-    @staticmethod
-    def _crop_component(frame_bgr, alpha, labels, stats, comp_i, cv2, np):
-        x = int(stats[comp_i, cv2.CC_STAT_LEFT])
-        y = int(stats[comp_i, cv2.CC_STAT_TOP])
-        w = int(stats[comp_i, cv2.CC_STAT_WIDTH])
-        h = int(stats[comp_i, cv2.CC_STAT_HEIGHT])
-        pad = 10
-        x0 = max(0, x - pad)
-        y0 = max(0, y - pad)
-        x1 = min(frame_bgr.shape[1], x + w + pad)
-        y1 = min(frame_bgr.shape[0], y + h + pad)
-        rgb = cv2.cvtColor(frame_bgr[y0:y1, x0:x1], cv2.COLOR_BGR2RGB)
-        a = alpha[y0:y1, x0:x1].copy()
-        lab = labels[y0:y1, x0:x1]
-        a = np.where(lab == comp_i, a, 0).astype(np.uint8)
-        ys, xs = np.where(a > 128)
-        if len(xs) < 80:
-            return None
-        pts = np.column_stack((xs.astype(np.float64), ys.astype(np.float64)))
-        mean = pts.mean(axis=0)
-        centered = pts - mean
-        cov = np.cov(centered, rowvar=False)
-        if not np.isfinite(cov).all():
-            return None
-        eigvals, eigvecs = np.linalg.eigh(cov)
-        axis = eigvecs[:, int(np.argmax(eigvals))]
-        proj = centered @ axis
-        lo = proj < np.percentile(proj, 12)
-        hi = proj > np.percentile(proj, 88)
-        # Head cue: brighter tip (orange/white) and/or narrower cross-section.
-        bright = rgb.astype(np.float32).mean(axis=2)
-        lo_b = float(bright[ys[lo], xs[lo]].mean()) if lo.any() else 0.0
-        hi_b = float(bright[ys[hi], xs[hi]].mean()) if hi.any() else 0.0
-        # Cross-section width near each tip (perpendicular spread).
-        perp = np.array([-axis[1], axis[0]], dtype=np.float64)
-        lat = centered @ perp
-        lo_w = float(np.std(lat[lo])) if lo.any() else 1.0
-        hi_w = float(np.std(lat[hi])) if hi.any() else 1.0
-        heading = math.atan2(float(axis[1]), float(axis[0]))
-        # Score: prefer bright + tapered tip as head.
-        hi_score = hi_b / 255.0 - 0.35 * (hi_w / max(lo_w, hi_w, 1e-3))
-        lo_score = lo_b / 255.0 - 0.35 * (lo_w / max(lo_w, hi_w, 1e-3))
-        if hi_score < lo_score:
-            heading += math.pi
-        length = float(np.percentile(proj, 95) - np.percentile(proj, 5))
-        length = max(length, float(max(w, h)) * 0.55)
-        rgba = np.dstack((rgb, a))
-        return rgba, heading, length
-
-    @staticmethod
-    def _rgba_to_surface(rgba, target_length: float) -> pygame.Surface | None:
-        import numpy as np
-
-        h, w = rgba.shape[:2]
-        if w < 8 or h < 8:
-            return None
-        # Scale so the long side ≈ target_length (keeps rotozoom cheap).
-        long_side = max(w, h)
-        scale = target_length / float(long_side)
-        if abs(scale - 1.0) > 0.02:
-            nw = max(8, int(round(w * scale)))
-            nh = max(8, int(round(h * scale)))
-            cv2 = _try_import_cv2()
-            if cv2 is not None:
-                rgba = cv2.resize(rgba, (nw, nh), interpolation=cv2.INTER_AREA)
-            else:
-                tmp = pygame.image.frombuffer(
-                    np.ascontiguousarray(rgba).tobytes(), (w, h), "RGBA"
-                )
-                return pygame.transform.smoothscale(tmp.copy(), (nw, nh)).convert_alpha()
-        h, w = rgba.shape[:2]
-        buf = np.ascontiguousarray(rgba)
-        surf = pygame.image.frombuffer(buf.tobytes(), (w, h), "RGBA").convert_alpha()
-        return surf.copy()
-
-
 class KoiOverlayVideo:
-    """Loop a pre-keyed MP4 overlay; OpenCV work happens only at load time."""
-
     def __init__(
         self,
         path: Path,
@@ -344,7 +304,6 @@ class KoiOverlayVideo:
         self.enabled = True
         self._cv2 = None
         self._fps = 30.0
-        self._frame_count = 0
         self._accum = 0.0
         self._index = 0
         self._frames: list[pygame.Surface] = []
@@ -361,28 +320,21 @@ class KoiOverlayVideo:
             return
         self._cv2 = _try_import_cv2()
         if self._cv2 is None:
-            print(f"[koi] OpenCV unavailable; skipping overlay {self.path.name}", file=sys.stderr)
+            print(f"[koi] OpenCV unavailable; skipping MP4 {self.path.name}", file=sys.stderr)
             return
         cap = self._cv2.VideoCapture(str(self.path))
         if not cap.isOpened():
-            print(f"[koi] Could not open overlay video: {self.path}", file=sys.stderr)
+            print(f"[koi] Could not open video: {self.path}", file=sys.stderr)
             return
         fps = float(cap.get(self._cv2.CAP_PROP_FPS) or 0.0)
         self._fps = fps if fps > 1.0 else 30.0
         reported = int(cap.get(self._cv2.CAP_PROP_FRAME_COUNT) or 0)
         tw, th = self.size
-        # Estimate RAM; if over budget, cache every Nth frame (still clock-synced).
         bytes_per = tw * th * 4
         est_all_mb = (max(reported, 1) * bytes_per) / (1024.0 * 1024.0)
         stride = 1
         if est_all_mb > self._max_cache_mb and reported > 0:
             stride = max(1, int(math.ceil(est_all_mb / self._max_cache_mb)))
-            print(
-                f"[koi] Overlay cache budget {self._max_cache_mb:.0f} MiB; "
-                f"keeping every {stride} frame(s) (~{est_all_mb / stride:.0f} MiB).",
-                file=sys.stderr,
-            )
-
         frames: list[pygame.Surface] = []
         i = 0
         while True:
@@ -393,21 +345,16 @@ class KoiOverlayVideo:
                 frames.append(self._bgr_to_surface(frame))
             i += 1
         cap.release()
-
         if not frames:
-            print(f"[koi] Overlay decode produced no frames: {self.path}", file=sys.stderr)
             return
-
         self._frames = frames
-        self._frame_count = len(frames)
-        # Stride slows presentation FPS so wall-clock loop duration matches the source.
         if stride > 1:
             self._fps = max(1.0, self._fps / stride)
         self._ok = True
-        cache_mb = (self._frame_count * bytes_per) / (1024.0 * 1024.0)
+        cache_mb = (len(frames) * bytes_per) / (1024.0 * 1024.0)
         print(
-            f"[koi] Overlay cached: {self.path.name} "
-            f"({self._frame_count} keyed surfaces @ {self._fps:.1f} fps, ~{cache_mb:.0f} MiB)"
+            f"[koi] MP4 cached: {self.path.name} "
+            f"({len(frames)} frames @ {self._fps:.1f} fps, ~{cache_mb:.0f} MiB)"
         )
 
     def close(self) -> None:
@@ -422,13 +369,12 @@ class KoiOverlayVideo:
         tw, th = self.size
         if frame_bgr.shape[1] != tw or frame_bgr.shape[0] != th:
             frame_bgr = cv2.resize(frame_bgr, (tw, th), interpolation=cv2.INTER_AREA)
-        alpha = _key_checkerboard_bgr(frame_bgr)
+        alpha = _key_video_frame_bgr(frame_bgr)
         if self.opacity < 1.0:
             alpha = (alpha.astype(np.float32) * self.opacity).astype(np.uint8)
         rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         rgba = np.dstack((rgb, alpha))
         surf = pygame.image.frombuffer(rgba.tobytes(), (tw, th), "RGBA").convert_alpha()
-        # frombuffer aliases the buffer; copy so the next decode cannot mutate the blit.
         return surf.copy()
 
     def update(self, dt: float) -> None:
@@ -446,248 +392,195 @@ class KoiOverlayVideo:
 
 
 class SwimState(Enum):
+    CRUISE = auto()
     GLIDE = auto()
-    COAST = auto()
-    HOVER = auto()
-    BURST = auto()
-    PIVOT = auto()
+    REST = auto()
+    DART = auto()
+    FEED = auto()
 
 
-def create_pond_bed():
-    """Natural pond bed: depth gradient plus soft river stones."""
-    bed = pygame.Surface((W, H))
-    cx, cy = W // 2, H // 2
-    max_d = math.hypot(cx, cy)
+class SoftCircuit:
+    def __init__(self, cx: float, cy: float, rx: float, ry: float, phase0: float = 0.0):
+        self.cx = cx
+        self.cy = cy
+        self.rx = rx
+        self.ry = ry
+        self.u = phase0
 
-    for y in range(0, H, 2):
-        for x in range(0, W, 2):
-            d = math.hypot(x - cx, y - cy) / max_d
-            r = int(max(5, 16 * (1 - d * 0.75)))
-            g = int(max(18, 54 * (1 - d * 0.65)))
-            b = int(max(24, 68 * (1 - d * 0.55)))
-            pygame.draw.rect(bed, (r, g, b), (x, y, 2, 2))
-
-    rng = random.Random(42)
-    stone_surf = pygame.Surface((W, H), pygame.SRCALPHA)
-    for _ in range(55):
-        sx = rng.randint(40, W - 40)
-        sy = rng.randint(40, H - 40)
-        rx = rng.randint(18, 48)
-        ry = int(rx * rng.uniform(0.65, 0.9))
-        ang = rng.uniform(0, 180)
-        shade = rng.randint(18, 38)
-
-        s_tmp = pygame.Surface((rx * 2 + 10, ry * 2 + 10), pygame.SRCALPHA)
-        pygame.draw.ellipse(s_tmp, (shade, shade + 12, shade + 16, 65), (5, 5, rx * 2, ry * 2))
-        pygame.draw.ellipse(
-            s_tmp, (shade + 10, shade + 22, shade + 25, 45), (7, 6, int(rx * 1.6), int(ry * 1.5))
-        )
-        rot_s = pygame.transform.rotate(s_tmp, ang)
-        stone_surf.blit(rot_s, rot_s.get_rect(center=(sx, sy)))
-
-    bed.blit(stone_surf, (0, 0))
-    return bed
+    def advance(self, speed: float, dt: float) -> tuple[float, float, float]:
+        peri = 2 * math.pi * math.sqrt((self.rx ** 2 + self.ry ** 2) * 0.5)
+        self.u = (self.u + (speed * dt) / max(1.0, peri)) % 1.0
+        ang = self.u * 2 * math.pi
+        x = self.cx + math.cos(ang) * self.rx
+        y = self.cy + math.sin(ang) * self.ry
+        tx = -math.sin(ang) * self.rx
+        ty = math.cos(ang) * self.ry
+        return x, y, math.atan2(ty, tx)
 
 
-def _tint_alpha(color, alpha):
-    """Apply a 0..1 opacity factor to an RGB or RGBA color."""
-    a = max(0, min(255, int(round(alpha * (color[3] if len(color) > 3 else 255)))))
-    return (color[0], color[1], color[2], a)
-
-
-class RealisticKoi:
-    def __init__(self, x, y, angle, base_speed, scale, variety, sprite_index: int = 0):
+class PixelKoi:
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        angle: float,
+        base_speed: float,
+        scale: float,
+        variety: str,
+        circuit: SoftCircuit,
+    ):
         self.x = x
         self.y = y
         self.angle = angle
         self.base_speed = base_speed
         self.speed = base_speed
-        self.base_scale = scale
         self.scale = scale
         self.variety = variety
-        self.sprite_index = sprite_index
-
+        self.circuit = circuit
         self.phase = random.uniform(0, 6.28)
         self.turn_vel = 0.0
-
-        # Depth: 0 = near surface (larger, clearer), 1 = deep (smaller, dimmer).
-        self.depth = random.uniform(0.25, 0.75)
+        self.depth = random.uniform(0.2, 0.7)
         self.depth_vel = 0.0
-
-        self.state = SwimState.GLIDE
-        self.state_timer = random.uniform(1.5, 3.5)
+        self.state = SwimState.CRUISE
+        self.state_timer = random.uniform(2.5, 5.0)
         self.call_timer = 0.0
-        self.call_target = None
+        self.call_target: tuple[float, float] | None = None
         self.scatter_timer = 0.0
         self.scatter_heading = angle
-        # Soft draw heading (slewed toward physics angle) + gated L/R facing.
         self._visual_angle = float(angle)
         self._face_left = math.cos(angle) < 0.0
         self._face_flip_cd = 0.0
+        self._stroke_t = random.uniform(0, 1)
+        self._stroke_period = random.uniform(1.8, 2.6)
 
-        # Follow-the-leader spine (32 joints).
-        self.num_joints = 32
-        self.joint_dist = 4.6 * scale
-        self.joints = [
-            [x - math.cos(angle) * i * self.joint_dist, y - math.sin(angle) * i * self.joint_dist]
-            for i in range(self.num_joints)
-        ]
-
-        self.spots = self._generate_organic_spots()
-
-    def _generate_organic_spots(self):
-        rng = random.Random(hash((self.variety, round(self.base_scale, 2), round(self.phase, 2))))
-        spots = []
-        if self.variety in ("kohaku", "sanke", "showa"):
-            for _ in range(rng.randint(3, 5)):
-                spots.append(
-                    {
-                        "t_center": rng.uniform(0.08, 0.78),
-                        "t_radius": rng.uniform(0.08, 0.16),
-                        "side_offset": rng.uniform(-0.35, 0.35),
-                        "color": (228, 62, 22) if rng.random() > 0.3 else (242, 85, 28),
-                    }
-                )
-        if self.variety in ("sanke", "showa"):
-            for _ in range(rng.randint(3, 6)):
-                spots.append(
-                    {
-                        "t_center": rng.uniform(0.15, 0.82),
-                        "t_radius": rng.uniform(0.04, 0.09),
-                        "side_offset": rng.uniform(-0.45, 0.45),
-                        "color": (24, 26, 32),
-                    }
-                )
-        return spots
-
-    def attract_to(self, tx, ty):
-        """Swim toward a click / tap (feeding call)."""
+    def attract_to(self, tx: float, ty: float) -> None:
         self.call_target = (tx, ty)
-        self.call_timer = random.uniform(2.4, 3.6)
+        self.call_timer = random.uniform(2.8, 4.0)
         self.scatter_timer = 0.0
         desired = math.atan2(ty - self.y, tx - self.x)
-        diff = (desired - self.angle + math.pi) % (2 * math.pi) - math.pi
-        self.turn_vel = max(-2.0, min(2.0, diff * 2.8))
+        diff = _norm_pi(desired - self.angle)
+        self.turn_vel = max(-1.4, min(1.4, diff * 1.8))
         dist = math.hypot(tx - self.x, ty - self.y)
-        if dist > 220:
-            self._enter(SwimState.BURST, random.uniform(0.55, 0.95))
-        elif abs(diff) > 1.1:
-            self._enter(SwimState.PIVOT, random.uniform(0.35, 0.7))
+        if dist > 280:
+            self._enter(SwimState.DART, random.uniform(0.7, 1.1))
         else:
-            self._enter(SwimState.GLIDE, random.uniform(1.2, 2.0))
-        # Drift slightly toward the surface when called.
-        self.depth_vel -= 0.35
+            self._enter(SwimState.FEED, random.uniform(1.4, 2.2))
+        self.depth_vel -= 0.25
 
-    def scatter(self):
-        """Dash away from the current heading cluster (Space)."""
+    def scatter(self) -> None:
         self.call_timer = 0.0
         self.call_target = None
-        self.scatter_heading = self.angle + random.uniform(-2.4, 2.4)
-        self.scatter_timer = random.uniform(1.1, 1.8)
-        self._enter(SwimState.BURST, random.uniform(0.7, 1.2))
-        self.depth_vel += random.uniform(0.15, 0.45)
+        self.scatter_heading = self.angle + random.uniform(-2.2, 2.2)
+        self.scatter_timer = random.uniform(1.2, 1.9)
+        self._enter(SwimState.DART, random.uniform(0.8, 1.3))
+        self.depth_vel += random.uniform(0.1, 0.35)
 
-    def _enter(self, state, duration):
+    def _enter(self, state: SwimState, duration: float) -> None:
         self.state = state
         self.state_timer = duration
 
-    def _pick_idle_state(self):
+    def _pick_idle(self) -> None:
         roll = random.random()
-        if roll < 0.38:
-            self._enter(SwimState.GLIDE, random.uniform(2.0, 4.5))
-        elif roll < 0.62:
-            self._enter(SwimState.COAST, random.uniform(1.2, 2.8))
+        if roll < 0.48:
+            self._enter(SwimState.CRUISE, random.uniform(3.5, 7.0))
         elif roll < 0.78:
-            self._enter(SwimState.HOVER, random.uniform(0.9, 2.2))
-        elif roll < 0.92:
-            self._enter(SwimState.BURST, random.uniform(0.45, 0.9))
+            self._enter(SwimState.GLIDE, random.uniform(2.0, 4.5))
+        elif roll < 0.93:
+            self._enter(SwimState.REST, random.uniform(1.5, 3.2))
         else:
-            self._enter(SwimState.PIVOT, random.uniform(0.4, 0.85))
+            self._enter(SwimState.DART, random.uniform(0.45, 0.85))
 
-    def _smooth_spine(self):
-        """Light Laplacian pass so the body curve stays soft without losing IK length."""
-        if self.num_joints < 3:
-            return
-        smoothed = [self.joints[0][:]]
-        for i in range(1, self.num_joints - 1):
-            px, py = self.joints[i - 1]
-            cx, cy = self.joints[i]
-            nx, ny = self.joints[i + 1]
-            sx = cx * 0.62 + (px + nx) * 0.19
-            sy = cy * 0.62 + (py + ny) * 0.19
-            smoothed.append([sx, sy])
-        smoothed.append(self.joints[-1][:])
+    def _stroke_beat(self) -> float:
+        share = 0.48 if self.state != SwimState.DART else 0.34
+        frac = self._stroke_t % 1.0
+        if frac < share:
+            return math.sin(math.pi * frac / share)
+        return 0.0
 
-        self.joints[0] = smoothed[0]
-        for i in range(1, self.num_joints):
-            px, py = self.joints[i - 1]
-            cx, cy = smoothed[i]
-            ang = math.atan2(py - cy, px - cx)
-            self.joints[i][0] = px - math.cos(ang) * self.joint_dist
-            self.joints[i][1] = py - math.sin(ang) * self.joint_dist
-
-    def update(self, dt):
+    def update(self, dt: float, neighbors: list["PixelKoi"]) -> None:
         self.state_timer -= dt
         if self.call_timer > 0:
             self.call_timer -= dt
         if self.scatter_timer > 0:
             self.scatter_timer -= dt
 
-        # Gentle depth wander (and call / scatter bias).
-        self.depth_vel += random.uniform(-0.25, 0.25) * dt
-        self.depth_vel *= 0.92
-        self.depth = max(0.05, min(0.95, self.depth + self.depth_vel * dt))
-        # Visual scale from depth: near surface larger, deep smaller.
-        depth_scale = 1.18 - self.depth * 0.42
-        self.scale = self.base_scale * depth_scale
-        self.joint_dist = 4.6 * self.scale
+        self.depth_vel += random.uniform(-0.15, 0.15) * dt
+        self.depth_vel *= 0.93
+        self.depth = max(0.05, min(0.92, self.depth + self.depth_vel * dt))
 
-        # Call / scatter steering overrides idle wander.
+        self._stroke_t += dt / self._stroke_period
+        beat = self._stroke_beat()
+
+        sep_x, sep_y = 0.0, 0.0
+        for other in neighbors:
+            if other is self:
+                continue
+            dx = self.x - other.x
+            dy = self.y - other.y
+            d2 = dx * dx + dy * dy
+            if d2 < 1e-2 or d2 > SEPARATION_RADIUS * SEPARATION_RADIUS:
+                continue
+            d = math.sqrt(d2)
+            push = (SEPARATION_RADIUS - d) / SEPARATION_RADIUS
+            sep_x += (dx / d) * push
+            sep_y += (dy / d) * push
+
         if self.scatter_timer > 0:
-            diff = (self.scatter_heading - self.angle + math.pi) % (2 * math.pi) - math.pi
-            self.turn_vel = max(-2.2, min(2.2, diff * 3.0))
-            if self.state != SwimState.BURST:
-                self._enter(SwimState.BURST, max(self.state_timer, 0.4))
+            diff = _norm_pi(self.scatter_heading - self.angle)
+            self.turn_vel = max(-1.6, min(1.6, diff * 2.2))
+            if self.state != SwimState.DART:
+                self._enter(SwimState.DART, max(self.state_timer, 0.4))
         elif self.call_timer > 0 and self.call_target is not None:
             tx, ty = self.call_target
             desired = math.atan2(ty - self.y, tx - self.x)
-            diff = (desired - self.angle + math.pi) % (2 * math.pi) - math.pi
+            diff = _norm_pi(desired - self.angle)
             dist = math.hypot(tx - self.x, ty - self.y)
-            self.turn_vel = max(-2.0, min(2.0, diff * 2.6))
-            if dist < 55:
-                if self.state != SwimState.HOVER:
-                    self._enter(SwimState.HOVER, random.uniform(0.6, 1.4))
-            elif abs(diff) > 1.25 and self.state not in (SwimState.PIVOT, SwimState.BURST):
-                self._enter(SwimState.PIVOT, random.uniform(0.3, 0.6))
+            self.turn_vel = max(-1.5, min(1.5, diff * 2.0))
+            if dist < 48:
+                self._enter(SwimState.FEED, random.uniform(0.8, 1.6))
+        elif self.state_timer <= 0:
+            self._pick_idle()
 
-        if self.state_timer <= 0 and self.call_timer <= 0 and self.scatter_timer <= 0:
-            self._pick_idle_state()
-
-        # State → speed / turn character.
-        if self.state == SwimState.GLIDE:
-            target_speed = self.base_speed * (1.0 + 0.08 * math.sin(self.phase * 0.35))
-            self.turn_vel += random.uniform(-1.1, 1.1) * dt
-            self.turn_vel *= 0.94
-        elif self.state == SwimState.COAST:
-            target_speed = self.base_speed * 0.42
-            self.turn_vel *= 0.88
-            self.turn_vel += random.uniform(-0.5, 0.5) * dt
-        elif self.state == SwimState.HOVER:
-            target_speed = self.base_speed * 0.12
-            self.turn_vel += math.sin(self.phase * 1.6) * 0.9 * dt
-            self.turn_vel *= 0.9
-        elif self.state == SwimState.BURST:
-            target_speed = self.base_speed * 2.15
+        if self.state == SwimState.CRUISE:
+            target_speed = self.base_speed * (0.72 + 0.45 * beat)
+            self.turn_vel += random.uniform(-0.55, 0.55) * dt
             self.turn_vel *= 0.96
-        else:  # PIVOT
-            target_speed = self.base_speed * 0.28
-            self.turn_vel += random.choice((-1, 1)) * 2.2 * dt
-            self.turn_vel = max(-2.0, min(2.0, self.turn_vel))
+        elif self.state == SwimState.GLIDE:
+            target_speed = self.base_speed * (0.38 + 0.2 * beat)
+            self.turn_vel *= 0.9
+        elif self.state == SwimState.REST:
+            target_speed = self.base_speed * 0.1
+            self.turn_vel += math.sin(self.phase * 0.9) * 0.35 * dt
+            self.turn_vel *= 0.92
+        elif self.state == SwimState.DART:
+            target_speed = self.base_speed * (1.55 + 0.9 * beat)
+            self.turn_vel *= 0.97
+        else:
+            target_speed = self.base_speed * (0.22 + 0.35 * beat)
+            self.turn_vel *= 0.94
 
-        self.speed += (target_speed - self.speed) * min(1.0, 3.2 * dt)
+        self.speed += (target_speed - self.speed) * min(1.0, 2.4 * dt)
 
-        # Soft wall avoidance.
-        margin = 160
+        if self.call_timer <= 0 and self.scatter_timer <= 0 and self.state in (
+            SwimState.CRUISE,
+            SwimState.GLIDE,
+        ):
+            cx, cy, ch = self.circuit.advance(self.speed * 0.85, dt)
+            seek = math.atan2(cy - self.y, cx - self.x)
+            blend = 0.55
+            desired = math.atan2(
+                math.sin(ch) * (1 - blend) + math.sin(seek) * blend,
+                math.cos(ch) * (1 - blend) + math.cos(seek) * blend,
+            )
+            self.turn_vel += _norm_pi(desired - self.angle) * 0.9 * dt
+
+        if sep_x or sep_y:
+            sep_ang = math.atan2(sep_y, sep_x)
+            self.turn_vel += _norm_pi(sep_ang - self.angle) * 1.1 * dt
+            self.x += sep_x * SEPARATION_GAIN * dt * 0.02
+            self.y += sep_y * SEPARATION_GAIN * dt * 0.02
+
+        margin = 140
         steer_x, steer_y = 0.0, 0.0
         if self.x < margin:
             steer_x += (margin - self.x) / margin
@@ -697,416 +590,200 @@ class RealisticKoi:
             steer_y += (margin - self.y) / margin
         elif self.y > H - margin:
             steer_y -= (self.y - (H - margin)) / margin
-
-        if steer_x != 0.0 or steer_y != 0.0:
+        if steer_x or steer_y:
             wall_ang = math.atan2(steer_y, steer_x)
-            diff = (wall_ang - self.angle + math.pi) % (2 * math.pi) - math.pi
-            # Gentler wall steer — visual slew absorbs residual sharpness.
-            self.angle += diff * 1.45 * dt
+            self.angle += _norm_pi(wall_ang - self.angle) * 1.1 * dt
         else:
-            # Cap turn rate so physics heading itself stays continuous.
-            max_turn = 2.4 if self.state == SwimState.PIVOT else 1.85
-            turn = max(-max_turn, min(max_turn, self.turn_vel))
-            self.angle += turn * dt
+            max_turn = 1.35 if self.state == SwimState.DART else 0.95
+            self.angle += max(-max_turn, min(max_turn, self.turn_vel)) * dt
 
         self.x += math.cos(self.angle) * self.speed * dt
         self.y += math.sin(self.angle) * self.speed * dt
-        wave_rate = 1.4 if self.state == SwimState.HOVER else (self.speed * 0.075 + 2.2)
-        if self.state == SwimState.BURST:
-            wave_rate = self.speed * 0.09 + 3.4
-        self.phase += wave_rate * dt
 
-        # Visual heading: slew/lerp toward physics angle (no snap pitch).
-        vdiff = self._norm_pi(self.angle - self._visual_angle)
-        slew = HEADING_SLEW_FAST if (
-            self.state == SwimState.BURST or self.call_timer > 0 or self.scatter_timer > 0
-        ) else HEADING_SLEW_RATE
+        wave = 1.1 + self.speed * 0.04
+        if self.state == SwimState.DART:
+            wave = 2.2 + self.speed * 0.05
+        elif self.state == SwimState.REST:
+            wave = 0.7
+        self.phase += wave * dt
+
+        vdiff = _norm_pi(self.angle - self._visual_angle)
+        slew = (
+            HEADING_SLEW_FAST
+            if self.state == SwimState.DART or self.call_timer > 0 or self.scatter_timer > 0
+            else HEADING_SLEW
+        )
         step = slew * dt
         if abs(vdiff) <= step:
             self._visual_angle = self.angle
         else:
             self._visual_angle += math.copysign(step, vdiff)
 
-        # L/R flip only when mostly horizontal + cooldown (no vertical flip-flap).
-        if self._face_flip_cd > 0.0:
+        if self._face_flip_cd > 0:
             self._face_flip_cd = max(0.0, self._face_flip_cd - dt)
         vc = math.cos(self._visual_angle)
         vs = abs(math.sin(self._visual_angle))
         if self._face_flip_cd <= 0.0 and vs <= FACE_FLIP_SIN_MAX:
             if vc < -FACE_FLIP_COS and not self._face_left:
                 self._face_left = True
-                self._face_flip_cd = FACE_FLIP_COOLDOWN_S
+                self._face_flip_cd = FACE_FLIP_CD
             elif vc > FACE_FLIP_COS and self._face_left:
                 self._face_left = False
-                self._face_flip_cd = FACE_FLIP_COOLDOWN_S
+                self._face_flip_cd = FACE_FLIP_CD
 
-        # Inverse kinematics chain + swim wave, then a light smooth pass.
-        self.joints[0] = [self.x, self.y]
-        wave_amp = 0.14
-        if self.state == SwimState.BURST:
-            wave_amp = 0.2
-        elif self.state == SwimState.HOVER:
-            wave_amp = 0.08
-        elif self.state == SwimState.COAST:
-            wave_amp = 0.1
-
-        for i in range(1, self.num_joints):
-            t = i / (self.num_joints - 1)
-            px, py = self.joints[i - 1]
-            cx, cy = self.joints[i]
-            ang = math.atan2(py - cy, px - cx)
-            swim_wave = math.sin(self.phase - t * 5.2) * (wave_amp * (t ** 1.35))
-            target_ang = ang + swim_wave
-            self.joints[i][0] = px - math.cos(target_ang) * self.joint_dist
-            self.joints[i][1] = py - math.sin(target_ang) * self.joint_dist
-
-        self._smooth_spine()
-
-    def _body_radius(self, t):
-        """Body thickness profile from snout to tail root."""
-        if t < 0.26:
-            return (0.28 + 0.72 * math.sin((t / 0.26) * (math.pi / 2))) * 22.0 * self.scale
-        u = (t - 0.26) / 0.74
-        return (math.cos(u * (math.pi / 2)) ** 0.85) * 22.0 * self.scale
-
-    def _opacity(self):
-        # Deeper fish look softer / more submerged.
-        return max(0.35, min(1.0, 1.05 - self.depth * 0.55))
-
-    def draw(self, surf, sprites: KoiSpriteBank | None = None):
-        """Blit MP4 sprite when bank available; else procedural vector body."""
-        if sprites is not None and sprites.available:
-            if self._draw_sprite(surf, sprites):
-                return
-        self._draw_procedural(surf)
-
-    @staticmethod
-    def _norm_pi(a: float) -> float:
-        return (a + math.pi) % (2 * math.pi) - math.pi
-
-    def _spine_bend(self) -> float:
-        """Extra pitch from mid-spine vs soft visual heading (subtle S-curve)."""
-        i_near = min(3, self.num_joints - 1)
-        i_far = min(14, self.num_joints - 1)
-        dx = self.joints[i_near][0] - self.joints[i_far][0]
-        dy = self.joints[i_near][1] - self.joints[i_far][1]
-        if dx * dx + dy * dy < 1e-4:
-            return 0.0
-        spine = math.atan2(dy, dx)
-        raw = self._norm_pi(spine - self._visual_angle) * SPINE_BEND_GAIN
-        return max(-0.38, min(0.38, raw))
-
-    def _draw_sprite(self, surf: pygame.Surface, sprites: KoiSpriteBank) -> bool:
-        picked = sprites.pick(self.sprite_index, self.phase)
-        if picked is None:
-            return False
-        base, body_len = picked
-        # Match procedural body length (~147 * scale) to the keyed crop.
-        target_len = max(48.0, 147.0 * self.scale)
-        zoom = target_len / max(1.0, body_len)
-
-        # Bank surfaces are canonical nose-+X. Facing is gated in update();
-        # pitch uses slewed visual heading (+ optional spine bend).
-        facing_left = self._face_left
-        pose = pygame.transform.flip(base, True, False) if facing_left else base
-        bend = self._spine_bend()
-        if facing_left:
-            # Flip mirrors rotation sense; pitch relative to -X (π).
-            pitch = self._norm_pi(self._visual_angle - math.pi + bend)
-            rot_deg = math.degrees(pitch)
+    def draw(self, surf: pygame.Surface, atlas: PixelKoiAtlas) -> None:
+        img = atlas.frame(self.variety, self.phase)
+        depth_scale = 1.12 - self.depth * 0.28
+        zoom = self.scale * depth_scale
+        pose = pygame.transform.flip(img, True, False) if self._face_left else img
+        if self._face_left:
+            rot_deg = math.degrees(_norm_pi(self._visual_angle - math.pi))
         else:
-            pitch = self._norm_pi(self._visual_angle + bend)
-            rot_deg = -math.degrees(pitch)
+            rot_deg = -math.degrees(self._visual_angle)
         try:
-            img = pygame.transform.rotozoom(pose, rot_deg, zoom)
+            if abs(zoom - 1.0) > 0.02:
+                nw = max(8, int(pose.get_width() * zoom))
+                nh = max(8, int(pose.get_height() * zoom))
+                pose = pygame.transform.scale(pose, (nw, nh))
+            drawn = pygame.transform.rotate(pose, rot_deg)
         except pygame.error:
-            return False
-        opacity = self._opacity()
-        if opacity < 0.99:
-            img = img.copy()
-            img.set_alpha(max(40, min(255, int(255 * opacity))))
+            return
 
-        # Soft elliptical shadow under the fish (depth cue).
-        shadow_ox = 10 + (1.0 - self.depth) * 14
-        shadow_oy = 12 + (1.0 - self.depth) * 16
-        sw, sh = img.get_width(), img.get_height()
+        opacity = max(0.4, min(1.0, 1.02 - self.depth * 0.5))
+        if opacity < 0.98:
+            drawn = drawn.copy()
+            drawn.set_alpha(max(50, int(255 * opacity)))
+
+        sw, sh = drawn.get_width(), drawn.get_height()
         shadow = pygame.Surface((sw, sh), pygame.SRCALPHA)
         pygame.draw.ellipse(
             shadow,
-            (2, 10, 14, int(22 + (1.0 - self.depth) * 34)),
-            shadow.get_rect().inflate(-int(sw * 0.18), -int(sh * 0.35)),
+            (2, 8, 18, int(28 + (1.0 - self.depth) * 36)),
+            shadow.get_rect().inflate(-int(sw * 0.2), -int(sh * 0.4)),
         )
-        # Anchor near mid-body (slightly behind the head joint).
-        mid_i = min(6, self.num_joints - 1)
-        cx = self.joints[mid_i][0]
-        cy = self.joints[mid_i][1]
-        surf.blit(shadow, shadow.get_rect(center=(cx + shadow_ox, cy + shadow_oy)))
-        surf.blit(img, img.get_rect(center=(cx, cy)))
-        return True
+        ox = 8 + (1.0 - self.depth) * 12
+        oy = 10 + (1.0 - self.depth) * 14
+        surf.blit(shadow, shadow.get_rect(center=(self.x + ox, self.y + oy)))
+        surf.blit(drawn, drawn.get_rect(center=(self.x, self.y)))
 
-    def _draw_procedural(self, surf):
-        opacity = self._opacity()
-        shadow_strength = int(28 + (1.0 - self.depth) * 36)
-        shadow_ox = 14 + (1.0 - self.depth) * 18
-        shadow_oy = 18 + (1.0 - self.depth) * 22
 
-        angles = []
-        for i in range(self.num_joints):
-            if i == 0:
-                ang = self.angle
-            else:
-                dx = self.joints[i - 1][0] - self.joints[i][0]
-                dy = self.joints[i - 1][1] - self.joints[i][1]
-                ang = math.atan2(dy, dx)
-            angles.append(ang)
+def create_pond_bed() -> pygame.Surface:
+    bed = pygame.Surface((W, H))
+    cx, cy = W * 0.5, H * 0.45
+    max_d = math.hypot(cx, cy)
+    for y in range(0, H, 2):
+        for x in range(0, W, 2):
+            d = math.hypot(x - cx, y - cy) / max_d
+            r = int(_lerp(8, 14, 1 - d) * (1 - d * 0.55) + 2)
+            g = int(_lerp(16, 40, 1 - d) * (1 - d * 0.5) + 4)
+            b = int(_lerp(24, 72, 1 - d) * (1 - d * 0.4) + 10)
+            pygame.draw.rect(bed, (r, g, b), (x, y, 2, 2))
+    rng = random.Random(7)
+    gravel = pygame.Surface((W, H), pygame.SRCALPHA)
+    for _ in range(90):
+        gx = rng.randint(20, W - 20)
+        gy = rng.randint(int(H * 0.55), H - 12)
+        gr = rng.randint(1, 3)
+        pygame.draw.circle(gravel, (30, 55, 90, rng.randint(40, 90)), (gx, gy), gr)
+    bed.blit(gravel, (0, 0))
+    return bed
 
-        xs = [p[0] for p in self.joints]
-        ys = [p[1] for p in self.joints]
-        pad = int(75 * self.scale + shadow_ox + 8)
-        min_x = max(0, int(min(xs)) - pad)
-        min_y = max(0, int(min(ys)) - pad)
-        max_x = min(W, int(max(xs)) + pad + 35)
-        max_y = min(H, int(max(ys)) + pad + 35)
-        bw, bh = max_x - min_x, max_y - min_y
-        if bw <= 0 or bh <= 0:
-            return
 
-        local_surf = pygame.Surface((bw, bh), pygame.SRCALPHA)
-
-        def to_loc(px, py):
-            return px - min_x, py - min_y
-
-        # Soft bed shadow — stronger when closer to the surface.
-        for i in range(self.num_joints):
-            t = i / (self.num_joints - 1)
-            r = int(self._body_radius(t) * 0.95)
-            if r > 1:
-                lx, ly = to_loc(self.joints[i][0] + shadow_ox, self.joints[i][1] + shadow_oy)
-                pygame.draw.circle(local_surf, (2, 10, 14, shadow_strength), (int(lx), int(ly)), r)
-
-        # Barbels
-        hx, hy = to_loc(*self.joints[0])
-        hang = angles[0]
-        for side in (-1, 1):
-            b_ang = hang + side * 0.55 + math.sin(self.phase) * 0.08
-            bx1 = hx + math.cos(hang + side * 0.35) * 4 * self.scale
-            by1 = hy + math.sin(hang + side * 0.35) * 4 * self.scale
-            bx2 = bx1 + math.cos(b_ang) * 12 * self.scale
-            by2 = by1 + math.sin(b_ang) * 12 * self.scale
+def draw_botanicals(surf: pygame.Surface, t: float) -> None:
+    pads = [
+        (110, 95, 70, 0.4, True, 1.0),
+        (175, 145, 48, 2.1, False, 0.85),
+        (70, 160, 36, 1.2, False, 0.7),
+        (1040, 560, 78, 3.5, True, 1.1),
+        (980, 620, 52, 0.8, False, 0.9),
+        (1085, 500, 40, 2.4, False, 0.75),
+        (1000, 80, 44, 1.5, False, 0.7),
+        (90, 600, 38, 0.3, False, 0.65),
+    ]
+    for px, py, rad, notch, has_flower, scale in pads:
+        sway_x = math.sin(t * 0.55 + px * 0.01) * 2.2
+        sway_y = math.cos(t * 0.48 + py * 0.01) * 1.8
+        x, y = px + sway_x, py + sway_y
+        r = int(rad * scale)
+        ps = pygame.Surface((r * 2 + 36, r * 2 + 36), pygame.SRCALPHA)
+        c = r + 14
+        pygame.draw.circle(ps, (0, 10, 20, 90), (c + 10, c + 14), r)
+        pygame.draw.circle(ps, (26, 78, 48), (c, c), r)
+        pygame.draw.circle(ps, (40, 110, 62), (c - 2, c - 2), int(r * 0.86))
+        for k in range(7):
+            va = notch + 0.4 + k * 0.75
             pygame.draw.line(
-                local_surf,
-                _tint_alpha((235, 225, 215, 190), opacity),
-                (bx1, by1),
-                (bx2, by2),
-                max(1, int(1.6 * self.scale)),
+                ps,
+                (56, 130, 78, 130),
+                (c, c),
+                (c + math.cos(va) * r * 0.82, c + math.sin(va) * r * 0.82),
+                1,
             )
+        cut = [
+            (c, c),
+            (c + math.cos(notch - 0.22) * (r + 3), c + math.sin(notch - 0.22) * (r + 3)),
+            (c + math.cos(notch + 0.22) * (r + 3), c + math.sin(notch + 0.22) * (r + 3)),
+        ]
+        pygame.draw.polygon(ps, (0, 0, 0, 0), cut)
+        if has_flower:
+            fx, fy = c - 4, c - 6
+            for layer_r, col in [
+                (15, (250, 170, 200)),
+                (11, (252, 200, 220)),
+                (6, (255, 236, 140)),
+            ]:
+                for p_ang in range(0, 360, 45):
+                    ra = math.radians(p_ang + t * 3)
+                    pygame.draw.circle(
+                        ps,
+                        col,
+                        (
+                            int(fx + math.cos(ra) * layer_r * 0.5),
+                            int(fy + math.sin(ra) * layer_r * 0.5),
+                        ),
+                        max(2, layer_r // 2),
+                    )
+            pygame.draw.circle(ps, (255, 220, 80), (int(fx), int(fy)), 4)
+        surf.blit(ps, (int(x - c), int(y - c)))
 
-        # Pectoral fins
-        px_base, py_base = to_loc(*self.joints[5])
-        pang = angles[5]
-        flap = math.sin(self.phase * 0.85) * 0.26
-        for side in (-1, 1):
-            f_ang = pang + side * (1.12 + flap)
-            p1 = (px_base, py_base)
-            p2 = (
-                px_base + math.cos(f_ang - 0.28 * side) * 38 * self.scale,
-                py_base + math.sin(f_ang - 0.28 * side) * 38 * self.scale,
-            )
-            p3 = (
-                px_base + math.cos(f_ang + 0.12 * side) * 42 * self.scale,
-                py_base + math.sin(f_ang + 0.12 * side) * 42 * self.scale,
-            )
-            p4 = (
-                px_base + math.cos(f_ang + 0.42 * side) * 26 * self.scale,
-                py_base + math.sin(f_ang + 0.42 * side) * 26 * self.scale,
-            )
-            pygame.draw.polygon(local_surf, _tint_alpha((245, 248, 252, 115), opacity), [p1, p2, p3, p4])
-            for ray_pt in (p2, p3, p4):
-                pygame.draw.line(local_surf, _tint_alpha((255, 255, 255, 145), opacity), p1, ray_pt, 1)
 
-        # Caudal fin
-        tx, ty = to_loc(*self.joints[-1])
-        tang = angles[-1] + math.pi
-        tail_poly = [(tx, ty)]
-        num_rays = 11
-        for k in range(num_rays):
-            u = (k / (num_rays - 1)) * 2.0 - 1.0
-            spread = u * 0.62
-            fork = 1.0 - 0.18 * math.exp(-(u * 3.0) ** 2)
-            length = (46.0 * fork * (1.0 - 0.18 * (u ** 2))) * self.scale
-            wave_tail = math.sin(self.phase - 5.5 + u * 0.8) * 0.18
-            ang = tang + spread + wave_tail
-            tail_poly.append((tx + math.cos(ang) * length, ty + math.sin(ang) * length))
-
-        pygame.draw.polygon(local_surf, _tint_alpha((248, 246, 242, 135), opacity), tail_poly)
-        for pt in tail_poly[1::2]:
-            pygame.draw.line(local_surf, _tint_alpha((255, 255, 255, 160), opacity), (tx, ty), pt, 1)
-
-        # Main body (tail → head)
-        base_col = (242, 242, 245) if self.variety != "ogon" else (245, 195, 45)
-        edge_col = (195, 200, 210) if self.variety != "ogon" else (190, 140, 20)
-        base_a = _tint_alpha((*base_col, 255), opacity)
-        edge_a = _tint_alpha((*edge_col, 255), opacity)
-
-        for i in range(self.num_joints - 1, -1, -1):
-            t = i / (self.num_joints - 1)
-            lx, ly = to_loc(*self.joints[i])
-            ang = angles[i]
-            r = max(1, int(self._body_radius(t)))
-
-            pygame.draw.circle(local_surf, edge_a, (int(lx), int(ly)), r)
-            if r > 2:
-                pygame.draw.circle(local_surf, base_a, (int(lx - 1), int(ly - 1)), int(r * 0.88))
-
-            for spot in self.spots:
-                dist_t = abs(t - spot["t_center"])
-                if dist_t < spot["t_radius"]:
-                    factor = math.cos((dist_t / spot["t_radius"]) * (math.pi / 2))
-                    sr = int(r * 0.86 * factor)
-                    if sr > 1:
-                        perp_ang = ang + math.pi / 2
-                        sx = lx + math.cos(perp_ang) * (r * spot["side_offset"])
-                        sy = ly + math.sin(perp_ang) * (r * spot["side_offset"])
-                        pygame.draw.circle(
-                            local_surf,
-                            _tint_alpha((*spot["color"], 255), opacity),
-                            (int(sx), int(sy)),
-                            sr,
-                        )
-
-            if r > 4 and 0.08 < t < 0.72:
-                pygame.draw.circle(
-                    local_surf,
-                    _tint_alpha((255, 255, 255, 95), opacity),
-                    (int(lx - 2), int(ly - 2)),
-                    int(r * 0.42),
-                )
-
-        # Dorsal fin
-        dorsal_pts = []
-        for i in range(8, 22):
-            t = i / (self.num_joints - 1)
-            lx, ly = to_loc(*self.joints[i])
-            ang = angles[i]
-            wave_d = math.sin(self.phase - t * 5.0) * 4.5 * self.scale
-            dx = lx + math.cos(ang + math.pi / 2) * wave_d
-            dy = ly + math.sin(ang + math.pi / 2) * wave_d
-            dorsal_pts.append((dx, dy))
-        if len(dorsal_pts) >= 2:
-            pygame.draw.lines(
-                local_surf,
-                _tint_alpha((255, 255, 255, 165), opacity),
-                False,
-                dorsal_pts,
-                max(2, int(3.2 * self.scale)),
-            )
-
-        # Eyes
-        ex_base, ey_base = to_loc(*self.joints[2])
-        eang = angles[2]
-        for side in (-1, 1):
-            perp = eang + side * 1.48
-            ex = ex_base + math.cos(perp) * 11.5 * self.scale
-            ey = ey_base + math.sin(perp) * 11.5 * self.scale
-            er = max(2, int(2.8 * self.scale))
-            pygame.draw.circle(local_surf, _tint_alpha((220, 215, 200, 255), opacity), (int(ex), int(ey)), er + 1)
-            pygame.draw.circle(local_surf, _tint_alpha((12, 14, 18, 255), opacity), (int(ex), int(ey)), er)
-            pygame.draw.circle(local_surf, _tint_alpha((255, 255, 255, 255), opacity), (int(ex - 1), int(ey - 1)), 1)
-
-        surf.blit(local_surf, (min_x, min_y))
+def draw_caustics(surf: pygame.Surface, t: float) -> None:
+    layer = pygame.Surface((W, H), pygame.SRCALPHA)
+    for i in range(5):
+        cx = W * 0.5 + math.cos(t * 0.22 + i * 1.3) * 260
+        cy = H * 0.48 + math.sin(t * 0.18 + i * 1.1) * 160
+        rad = int(120 + 30 * math.sin(t * 0.4 + i))
+        pygame.draw.circle(layer, (90, 170, 220, 7), (int(cx), int(cy)), rad)
+    surf.blit(layer, (0, 0))
 
 
 class Ripple:
     def __init__(self, x, y, max_r=95, strength=1.0):
         self.x = x
         self.y = y
-        self.r = 5.0
+        self.r = 4.0
         self.max_r = max_r
         self.strength = strength
-        self.alpha = 110.0 * strength
+        self.alpha = 100.0 * strength
 
     def update(self, dt):
-        self.r += 42.0 * dt
-        self.alpha = max(0.0, 110.0 * self.strength * (1.0 - self.r / self.max_r))
+        self.r += 36.0 * dt
+        self.alpha = max(0.0, 100.0 * self.strength * (1.0 - self.r / self.max_r))
 
     def draw(self, surf):
         if self.alpha > 2:
             size = int(self.r * 2 + 6)
             rs = pygame.Surface((size, size), pygame.SRCALPHA)
             c = size // 2
-            pygame.draw.circle(rs, (175, 225, 245, int(self.alpha)), (c, c), int(self.r), 1)
-            if self.r > 18:
+            pygame.draw.circle(rs, (160, 210, 240, int(self.alpha)), (c, c), int(self.r), 1)
+            if self.r > 16:
                 pygame.draw.circle(
-                    rs, (175, 225, 245, int(self.alpha * 0.5)), (c, c), int(self.r - 12), 1
-                )
-            if self.r > 36:
-                pygame.draw.circle(
-                    rs, (190, 235, 250, int(self.alpha * 0.28)), (c, c), int(self.r - 24), 1
+                    rs, (160, 210, 240, int(self.alpha * 0.45)), (c, c), int(self.r - 10), 1
                 )
             surf.blit(rs, (int(self.x - c), int(self.y - c)))
 
 
-def draw_water_surface(surf, t):
-    """Sun caustics on the water surface plus floating lotus pads."""
-    caustic_surf = pygame.Surface((W, H), pygame.SRCALPHA)
-    for i in range(7):
-        cx = W * 0.5 + math.cos(t * 0.35 + i * 1.1) * 280
-        cy = H * 0.5 + math.sin(t * 0.28 + i * 1.4) * 180
-        rad = int(130 + 35 * math.sin(t * 0.6 + i))
-        pygame.draw.circle(caustic_surf, (120, 210, 235, 8), (int(cx), int(cy)), rad)
-    surf.blit(caustic_surf, (0, 0))
-
-    pads = [
-        (135, 125, 62, 0.45, True),
-        (205, 178, 44, 2.2, False),
-        (1025, 595, 68, 3.7, True),
-        (955, 635, 48, 1.1, False),
-    ]
-    for px, py, rad, notch, has_flower in pads:
-        sway_x = math.sin(t * 0.8 + px * 0.01) * 3.0
-        sway_y = math.cos(t * 0.7 + py * 0.01) * 2.5
-        x, y = px + sway_x, py + sway_y
-
-        ps = pygame.Surface((rad * 2 + 40, rad * 2 + 40), pygame.SRCALPHA)
-        c = rad + 15
-        pygame.draw.circle(ps, (2, 10, 14, 80), (c + 14, c + 18), rad)
-        pygame.draw.circle(ps, (26, 76, 40), (c, c), rad)
-        pygame.draw.circle(ps, (38, 102, 54), (c - 2, c - 2), int(rad * 0.86))
-        for k in range(8):
-            va = notch + 0.5 + k * 0.68
-            pygame.draw.line(
-                ps,
-                (52, 122, 68, 120),
-                (c, c),
-                (c + math.cos(va) * (rad * 0.85), c + math.sin(va) * (rad * 0.85)),
-                1,
-            )
-        cut_pts = [
-            (c, c),
-            (c + math.cos(notch - 0.24) * (rad + 4), c + math.sin(notch - 0.24) * (rad + 4)),
-            (c + math.cos(notch + 0.24) * (rad + 4), c + math.sin(notch + 0.24) * (rad + 4)),
-        ]
-        pygame.draw.polygon(ps, (0, 0, 0, 0), cut_pts)
-
-        if has_flower:
-            fx, fy = c - 6, c - 4
-            for layer_r, col in [(16, (235, 140, 165)), (11, (250, 185, 200)), (6, (255, 235, 130))]:
-                for p_ang in range(0, 360, 45):
-                    ra = math.radians(p_ang + t * 4)
-                    px_f = fx + math.cos(ra) * (layer_r * 0.55)
-                    py_f = fy + math.sin(ra) * (layer_r * 0.55)
-                    pygame.draw.circle(ps, col, (int(px_f), int(py_f)), layer_r // 2)
-
-        surf.blit(ps, (int(x - c), int(y - c)))
-
-
-def draw_hint(
-    surf,
-    elapsed,
-    overlay_active: bool = False,
-    sprites_active: bool = False,
-):
-    """Brief on-screen control hint that fades after a few seconds."""
+def draw_hint(surf, elapsed, overlay_active: bool = False):
     if elapsed > HINT_FADE_S:
         return
     fade = 1.0 if elapsed < HINT_FADE_S - 3.0 else max(0.0, (HINT_FADE_S - elapsed) / 3.0)
@@ -1115,24 +792,23 @@ def draw_hint(
         return
     if overlay_active:
         lines = [
-            "Overlay on — interactive fish hidden",
+            "MP4 overlay on — interactive pixel koi hidden",
             "Click / tap — ripples",
             "O — interactive    F11 — fullscreen    Esc — quit",
         ]
     else:
-        look = "sprites" if sprites_active else "procedural"
         lines = [
-            f"Click / tap — call the koi ({look})",
-            "Space — scatter    P — sprites/procedural    O — overlay",
+            "Click / tap — call the koi (pixel pond)",
+            "Space — scatter    O — MP4 overlay",
             "F11 — fullscreen    Esc — quit",
         ]
     pad_x, pad_y = 14, 10
-    rendered = [HINT_FONT.render(line, True, (220, 240, 250)) for line in lines]
+    rendered = [HINT_FONT.render(line, True, (210, 230, 245)) for line in lines]
     box_w = max(r.get_width() for r in rendered) + pad_x * 2
     box_h = sum(r.get_height() for r in rendered) + pad_y * 2 + 4
     box = pygame.Surface((box_w, box_h), pygame.SRCALPHA)
-    pygame.draw.rect(box, (8, 22, 30, int(160 * fade)), (0, 0, box_w, box_h), border_radius=8)
-    pygame.draw.rect(box, (120, 190, 220, alpha), (0, 0, box_w, box_h), 1, border_radius=8)
+    pygame.draw.rect(box, (6, 16, 28, int(170 * fade)), (0, 0, box_w, box_h), border_radius=8)
+    pygame.draw.rect(box, (100, 170, 210, alpha), (0, 0, box_w, box_h), 1, border_radius=8)
     y = pad_y
     for r in rendered:
         r.set_alpha(alpha)
@@ -1142,63 +818,68 @@ def draw_hint(
 
 
 def _parse_args(argv: list[str] | None = None):
-    parser = argparse.ArgumentParser(description="Standalone pygame koi pond")
+    parser = argparse.ArgumentParser(description="Standalone pygame pixel koi pond")
     parser.add_argument(
-        "--procedural",
-        action="store_true",
-        help="Force procedural vector draw (skip MP4 fish sprites).",
+        "--mp4",
+        type=Path,
+        default=DEFAULT_MP4_PATH,
+        help="Path to optional MP4 for overlay mode.",
     )
     parser.add_argument(
         "--overlay",
         nargs="?",
-        const=DEFAULT_OVERLAY_MP4,
+        const=None,
         default=None,
         type=Path,
-        help=(
-            "Optional full-pond keyed MP4 overlay (path optional; default asset). "
-            "Off by default. When on, interactive RealisticKoi are hidden (O toggles)."
-        ),
+        help="Start with full-pond keyed MP4 animation (toggle with O).",
     )
     parser.add_argument(
         "--fullscreen",
         action="store_true",
-        help="Start fullscreen (F11 toggles; SCALED logical 1150x720)",
+        help="Start fullscreen (F11 toggles; SCALED logical 1150x720).",
     )
     return parser.parse_args(argv)
 
 
 def _load_overlay(path: Path) -> KoiOverlayVideo | None:
-    """Decode/key MP4 once into Surfaces. Returns None if unavailable."""
     candidate = Path(path)
     if not candidate.is_file():
-        print(f"[koi] Overlay file missing ({candidate}).", file=sys.stderr)
+        print(f"[koi] MP4 file missing ({candidate}).", file=sys.stderr)
         return None
-    print("[koi] Caching keyed overlay frames (one-time)…", file=sys.stderr)
+    print("[koi] Caching keyed MP4 frames (one-time)…", file=sys.stderr)
     overlay = KoiOverlayVideo(candidate, (W, H), opacity=OVERLAY_OPACITY)
     if not overlay.available:
         return None
     return overlay
 
 
-def _load_sprite_bank(path: Path) -> KoiSpriteBank | None:
-    """Extract keyed fish crops from MP4. Returns None if unavailable."""
-    candidate = Path(path)
-    if not candidate.is_file():
-        print(f"[koi] Sprite source missing ({candidate}); procedural draw.", file=sys.stderr)
-        return None
-    bank = KoiSpriteBank(candidate)
-    if not bank.available:
-        return None
-    return bank
-
-
-def _spawn_procedural_koi() -> list[RealisticKoi]:
-    return [
-        RealisticKoi(420, 310, 0.3, 105, 1.18, "kohaku", sprite_index=0),
-        RealisticKoi(740, 450, 3.4, 95, 1.12, "sanke", sprite_index=1),
-        RealisticKoi(580, 520, -1.2, 88, 1.00, "showa", sprite_index=2),
-        RealisticKoi(320, 500, -0.5, 92, 0.92, "ogon", sprite_index=3),
+def _spawn_koi() -> list[PixelKoi]:
+    circuits = [
+        SoftCircuit(W * 0.5, H * 0.48, 380, 220, 0.00),
+        SoftCircuit(W * 0.32, H * 0.32, 160, 70, 0.50),
+        SoftCircuit(W * 0.68, H * 0.34, 160, 70, 0.50),
+        SoftCircuit(W * 0.50, H * 0.52, 220, 70, 0.00),
+        SoftCircuit(W * 0.30, H * 0.68, 150, 55, 0.50),
+        SoftCircuit(W * 0.70, H * 0.68, 150, 55, 0.00),
     ]
+    specs = [
+        (circuits[0], "kohaku", 42, 1.05, 0.05),
+        (circuits[0], "yamabuki", 40, 1.00, 0.55),
+        (circuits[1], "asagi", 38, 0.95, 0.10),
+        (circuits[2], "kohaku", 36, 0.92, 0.20),
+        (circuits[3], "asagi", 34, 0.90, 0.40),
+        (circuits[4], "ogon", 36, 0.88, 0.15),
+        (circuits[5], "chagoi", 35, 0.90, 0.60),
+        (circuits[3], "karasu", 33, 0.85, 0.75),
+    ]
+    fish: list[PixelKoi] = []
+    for circ, variety, speed, scale, phase in specs:
+        own = SoftCircuit(circ.cx, circ.cy, circ.rx, circ.ry, phase)
+        x, y, heading = own.advance(0.0, 0.0)
+        x += random.uniform(-12, 12)
+        y += random.uniform(-8, 8)
+        fish.append(PixelKoi(x, y, heading, speed, scale, variety, own))
+    return fish
 
 
 def main(argv: list[str] | None = None):
@@ -1208,37 +889,18 @@ def main(argv: list[str] | None = None):
     fullscreen = bool(args.fullscreen)
     screen = _create_display(fullscreen)
     pond_bed = create_pond_bed()
+    atlas = PixelKoiAtlas()
+    kois = _spawn_koi()
 
-    # Interactive RealisticKoi always spawn; look = MP4 sprites when available.
-    kois: list[RealisticKoi] = _spawn_procedural_koi()
-    overlay_path = Path(args.overlay) if args.overlay is not None else DEFAULT_OVERLAY_MP4
-    sprite_path = DEFAULT_OVERLAY_MP4
-    want_overlay = args.overlay is not None
-    use_sprites = not bool(args.procedural)
-    sprites: KoiSpriteBank | None = None
-    if use_sprites:
-        sprites = _load_sprite_bank(sprite_path)
-        if sprites is None:
-            use_sprites = False
-            print("[koi] Falling back to procedural draw.", file=sys.stderr)
-        else:
-            print(
-                "[koi] Interactive pond with MP4 fish sprites (P toggles procedural).",
-                file=sys.stderr,
-            )
-    else:
-        print("[koi] Procedural draw (--procedural). P loads sprites if available.", file=sys.stderr)
-
+    source_mp4 = Path(args.overlay) if isinstance(args.overlay, Path) else Path(args.mp4)
+    want_overlay = args.overlay is not None or isinstance(args.overlay, Path)
     overlay: KoiOverlayVideo | None = None
     if want_overlay:
-        overlay = _load_overlay(overlay_path)
+        overlay = _load_overlay(source_mp4)
         if overlay is not None:
             overlay.enabled = True
-            print("[koi] Overlay mode (interactive fish hidden). Press O to return.", file=sys.stderr)
-        else:
-            print("[koi] Staying on interactive pond.", file=sys.stderr)
 
-    ripples = []
+    ripples: list[Ripple] = []
     ripple_timer = 0.0
     surface_ripple_timer = 0.0
     sim_time = 0.0
@@ -1246,16 +908,12 @@ def main(argv: list[str] | None = None):
     running = True
     try:
         while running:
-            # Cap display rate; overlay advances on its own FPS accumulator.
             dt = clock.tick(60) / 1000.0
             sim_time += dt
             assert screen is not None
 
             overlay_active = (
                 overlay is not None and overlay.available and overlay.enabled
-            )
-            sprites_active = bool(
-                use_sprites and sprites is not None and sprites.available
             )
 
             for event in pygame.event.get():
@@ -1272,48 +930,13 @@ def main(argv: list[str] | None = None):
                             k.scatter()
                         for k in kois:
                             ripples.append(Ripple(k.x, k.y, max_r=90, strength=0.7))
-                    elif event.key == pygame.K_p and not overlay_active:
-                        if use_sprites and sprites is not None and sprites.available:
-                            use_sprites = False
-                            print("[koi] Procedural vector draw.", file=sys.stderr)
-                        else:
-                            if sprites is None:
-                                sprites = _load_sprite_bank(sprite_path)
-                            if sprites is not None and sprites.available:
-                                use_sprites = True
-                                print("[koi] MP4 fish sprites on.", file=sys.stderr)
-                            else:
-                                use_sprites = False
-                                print("[koi] Sprites unavailable; staying procedural.", file=sys.stderr)
-                        sprites_active = bool(
-                            use_sprites and sprites is not None and sprites.available
-                        )
                     elif event.key == pygame.K_o:
                         if overlay is None:
-                            overlay = _load_overlay(overlay_path)
+                            overlay = _load_overlay(source_mp4)
                             if overlay is not None:
                                 overlay.enabled = True
-                                print(
-                                    "[koi] Overlay on (interactive fish hidden).",
-                                    file=sys.stderr,
-                                )
                         elif overlay.available:
                             overlay.enabled = not overlay.enabled
-                            if overlay.enabled:
-                                print(
-                                    "[koi] Overlay on (interactive fish hidden).",
-                                    file=sys.stderr,
-                                )
-                            else:
-                                print(
-                                    "[koi] Overlay off — interactive pond.",
-                                    file=sys.stderr,
-                                )
-                        overlay_active = (
-                            overlay is not None
-                            and overlay.available
-                            and overlay.enabled
-                        )
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     mx, my = event.pos
                     ripples.append(Ripple(mx, my, max_r=140, strength=1.15))
@@ -1322,20 +945,19 @@ def main(argv: list[str] | None = None):
                             k.attract_to(mx, my)
 
             screen.blit(pond_bed, (0, 0))
+            draw_caustics(screen, sim_time)
 
             if overlay_active:
                 assert overlay is not None
                 overlay.update(dt)
                 overlay.draw(screen)
             else:
-                bank = sprites if sprites_active else None
-                for k in sorted(kois, key=lambda fish: fish.depth, reverse=True):
-                    k.update(dt)
-                    k.draw(screen, sprites=bank)
+                for k in sorted(kois, key=lambda f: f.depth, reverse=True):
+                    k.update(dt, kois)
+                    k.draw(screen, atlas)
 
-                # Occasional ripples from near-surface fish motion.
                 ripple_timer += dt
-                if ripple_timer > 0.75:
+                if ripple_timer > 1.1:
                     ripple_timer = 0.0
                     candidates = [k for k in kois if k.depth < 0.55] or kois
                     chosen = random.choice(candidates)
@@ -1343,21 +965,20 @@ def main(argv: list[str] | None = None):
                         Ripple(
                             chosen.x,
                             chosen.y,
-                            max_r=85,
-                            strength=0.55 + (1.0 - chosen.depth) * 0.35,
+                            max_r=80,
+                            strength=0.45 + (1.0 - chosen.depth) * 0.3,
                         )
                     )
 
-            # Soft ambient surface ripples (wind / drip feel).
             surface_ripple_timer += dt
-            if surface_ripple_timer > 2.8:
-                surface_ripple_timer = random.uniform(0.0, 0.6)
+            if surface_ripple_timer > 3.2:
+                surface_ripple_timer = random.uniform(0.0, 0.5)
                 ripples.append(
                     Ripple(
                         random.uniform(80, W - 80),
                         random.uniform(80, H - 80),
-                        max_r=random.uniform(50, 90),
-                        strength=0.35,
+                        max_r=random.uniform(45, 85),
+                        strength=0.3,
                     )
                 )
 
@@ -1367,20 +988,12 @@ def main(argv: list[str] | None = None):
                 if r.alpha <= 2:
                     ripples.remove(r)
 
-            draw_water_surface(screen, sim_time)
-            draw_hint(
-                screen,
-                sim_time,
-                overlay_active=overlay_active,
-                sprites_active=sprites_active,
-            )
-
+            draw_botanicals(screen, sim_time)
+            draw_hint(screen, sim_time, overlay_active=overlay_active)
             pygame.display.flip()
     finally:
         if overlay is not None:
             overlay.close()
-        if sprites is not None:
-            sprites.close()
         pygame.quit()
 
 

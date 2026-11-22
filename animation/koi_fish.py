@@ -7,8 +7,13 @@ are spawned while overlay mode is on. Pond bed, ambient/click ripples, and water
 stay. Missing file, OpenCV failure, or `--no-overlay` falls back to the original
 procedural fish (nagomi-inspired click-call / scatter / depth — original pygame code).
 
+Overlay frames are chroma-keyed once at load into pygame Surfaces; the hot loop only
+advances a frame index (clock-synced to the video FPS) and blits. Fullscreen uses
+pygame SCALED + vsync when available (F11 or `--fullscreen`).
+
 Run:
     python animation/koi_fish.py
+    python animation/koi_fish.py --fullscreen
     python animation/koi_fish.py --no-overlay
 """
 
@@ -29,8 +34,8 @@ os.environ["SDL_VIDEO_CENTERED"] = "1"
 
 pygame.init()
 W, H = 1150, 720
-screen = pygame.display.set_mode((W, H))
-pygame.display.set_caption("Realistic Living Koi Pond")
+# Display is created in main() so --fullscreen / F11 can recreate it with SCALED+vsync.
+screen: pygame.Surface | None = None
 clock = pygame.time.Clock()
 HINT_FONT = pygame.font.SysFont("segoeui", 16)
 HINT_FADE_S = 12.0
@@ -39,6 +44,8 @@ _ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 DEFAULT_OVERLAY_MP4 = _ASSETS_DIR / "koi_fish_swimming_animated_overlay.mp4"
 # Full opacity in overlay-only mode (no procedural fish underneath/on top).
 OVERLAY_OPACITY = 1.0
+# Soft cap for the keyed Surface cache (~474 MiB for 150 frames @ 1150x720 RGBA).
+OVERLAY_CACHE_MAX_MB = 700.0
 
 
 def _try_import_cv2():
@@ -48,6 +55,19 @@ def _try_import_cv2():
         return cv2
     except ImportError:
         return None
+
+
+def _create_display(fullscreen: bool) -> pygame.Surface:
+    """Logical (W, H) buffer; SDL SCALED letterboxes/covers the real desktop."""
+    flags = pygame.SCALED | pygame.DOUBLEBUF
+    if fullscreen:
+        flags |= pygame.FULLSCREEN
+    try:
+        surf = pygame.display.set_mode((W, H), flags, vsync=1)
+    except TypeError:
+        surf = pygame.display.set_mode((W, H), flags)
+    pygame.display.set_caption("Realistic Living Koi Pond")
+    return surf
 
 
 def _key_checkerboard_bgr(frame_bgr, chroma_max: float = 18.0, gray_lo: float = 15.0, gray_hi: float = 95.0):
@@ -79,20 +99,27 @@ def _key_checkerboard_bgr(frame_bgr, chroma_max: float = 18.0, gray_lo: float = 
 
 
 class KoiOverlayVideo:
-    """Decode a looping MP4 and blit it as a keyed full-pond overlay."""
+    """Loop a pre-keyed MP4 overlay; OpenCV work happens only at load time."""
 
-    def __init__(self, path: Path, size: tuple[int, int], opacity: float = OVERLAY_OPACITY):
+    def __init__(
+        self,
+        path: Path,
+        size: tuple[int, int],
+        opacity: float = OVERLAY_OPACITY,
+        max_cache_mb: float = OVERLAY_CACHE_MAX_MB,
+    ):
         self.path = Path(path)
         self.size = size
         self.opacity = max(0.0, min(1.0, opacity))
         self.enabled = True
-        self._cap = None
         self._cv2 = None
         self._fps = 30.0
         self._frame_count = 0
         self._accum = 0.0
-        self._surface: pygame.Surface | None = None
+        self._index = 0
+        self._frames: list[pygame.Surface] = []
         self._ok = False
+        self._max_cache_mb = max_cache_mb
         self._open()
 
     @property
@@ -112,18 +139,49 @@ class KoiOverlayVideo:
             return
         fps = float(cap.get(self._cv2.CAP_PROP_FPS) or 0.0)
         self._fps = fps if fps > 1.0 else 30.0
-        self._frame_count = int(cap.get(self._cv2.CAP_PROP_FRAME_COUNT) or 0)
-        self._cap = cap
-        if not self._decode_next():
-            self.close()
+        reported = int(cap.get(self._cv2.CAP_PROP_FRAME_COUNT) or 0)
+        tw, th = self.size
+        # Estimate RAM; if over budget, cache every Nth frame (still clock-synced).
+        bytes_per = tw * th * 4
+        est_all_mb = (max(reported, 1) * bytes_per) / (1024.0 * 1024.0)
+        stride = 1
+        if est_all_mb > self._max_cache_mb and reported > 0:
+            stride = max(1, int(math.ceil(est_all_mb / self._max_cache_mb)))
+            print(
+                f"[koi] Overlay cache budget {self._max_cache_mb:.0f} MiB; "
+                f"keeping every {stride} frame(s) (~{est_all_mb / stride:.0f} MiB).",
+                file=sys.stderr,
+            )
+
+        frames: list[pygame.Surface] = []
+        i = 0
+        while True:
+            ok, frame = cap.read()
+            if not ok or frame is None:
+                break
+            if i % stride == 0:
+                frames.append(self._bgr_to_surface(frame))
+            i += 1
+        cap.release()
+
+        if not frames:
+            print(f"[koi] Overlay decode produced no frames: {self.path}", file=sys.stderr)
             return
+
+        self._frames = frames
+        self._frame_count = len(frames)
+        # Stride slows presentation FPS so wall-clock loop duration matches the source.
+        if stride > 1:
+            self._fps = max(1.0, self._fps / stride)
         self._ok = True
-        print(f"[koi] Overlay on: {self.path.name} ({self._frame_count} frames @ {self._fps:.1f} fps)")
+        cache_mb = (self._frame_count * bytes_per) / (1024.0 * 1024.0)
+        print(
+            f"[koi] Overlay cached: {self.path.name} "
+            f"({self._frame_count} keyed surfaces @ {self._fps:.1f} fps, ~{cache_mb:.0f} MiB)"
+        )
 
     def close(self) -> None:
-        if self._cap is not None:
-            self._cap.release()
-            self._cap = None
+        self._frames.clear()
         self._ok = False
 
     def _bgr_to_surface(self, frame_bgr) -> pygame.Surface:
@@ -143,36 +201,18 @@ class KoiOverlayVideo:
         # frombuffer aliases the buffer; copy so the next decode cannot mutate the blit.
         return surf.copy()
 
-    def _decode_next(self) -> bool:
-        if self._cap is None or self._cv2 is None:
-            return False
-        ok, frame = self._cap.read()
-        if not ok or frame is None:
-            self._cap.set(self._cv2.CAP_PROP_POS_FRAMES, 0)
-            ok, frame = self._cap.read()
-            if not ok or frame is None:
-                return False
-        self._surface = self._bgr_to_surface(frame)
-        return True
-
     def update(self, dt: float) -> None:
-        if not self._ok or not self.enabled or self._cap is None:
+        if not self._ok or not self.enabled or not self._frames:
             return
         self._accum += dt
         step = 1.0 / self._fps
-        advanced = False
         while self._accum >= step:
             self._accum -= step
-            if not self._decode_next():
-                self._ok = False
-                return
-            advanced = True
-        if not advanced and self._surface is None:
-            self._decode_next()
+            self._index = (self._index + 1) % len(self._frames)
 
     def draw(self, surf: pygame.Surface) -> None:
-        if self._ok and self.enabled and self._surface is not None:
-            surf.blit(self._surface, (0, 0))
+        if self._ok and self.enabled and self._frames:
+            surf.blit(self._frames[self._index], (0, 0))
 
 
 class SwimState(Enum):
@@ -737,12 +777,12 @@ def draw_hint(surf, elapsed, overlay_only: bool = False):
     if overlay_only:
         lines = [
             "Click / tap — ripples",
-            "O — toggle overlay    Esc — quit",
+            "F11 — fullscreen    O — overlay    Esc — quit",
         ]
     else:
         lines = [
             "Click / tap — call the koi",
-            "Space — scatter    Esc — quit",
+            "F11 — fullscreen    Space — scatter    Esc — quit",
         ]
     pad_x, pad_y = 14, 10
     rendered = [HINT_FONT.render(line, True, (220, 240, 250)) for line in lines]
@@ -772,6 +812,11 @@ def _parse_args(argv: list[str] | None = None):
         action="store_true",
         help="Procedural fish only (ignore overlay MP4)",
     )
+    parser.add_argument(
+        "--fullscreen",
+        action="store_true",
+        help="Start fullscreen (F11 toggles; SCALED logical 1150x720)",
+    )
     return parser.parse_args(argv)
 
 
@@ -785,13 +830,18 @@ def _spawn_procedural_koi() -> list[RealisticKoi]:
 
 
 def main(argv: list[str] | None = None):
+    global screen
+
     args = _parse_args(argv)
+    fullscreen = bool(args.fullscreen)
+    screen = _create_display(fullscreen)
     pond_bed = create_pond_bed()
 
     overlay = None
     if not args.no_overlay:
         candidate = Path(args.overlay)
         if candidate.is_file():
+            print("[koi] Caching keyed overlay frames (one-time)…", file=sys.stderr)
             overlay = KoiOverlayVideo(candidate, (W, H), opacity=OVERLAY_OPACITY)
             if not overlay.available:
                 overlay = None
@@ -812,8 +862,10 @@ def main(argv: list[str] | None = None):
     running = True
     try:
         while running:
+            # Cap display rate; overlay advances on its own FPS accumulator.
             dt = clock.tick(60) / 1000.0
             sim_time += dt
+            assert screen is not None
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -821,6 +873,9 @@ def main(argv: list[str] | None = None):
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
                         running = False
+                    elif event.key == pygame.K_F11:
+                        fullscreen = not fullscreen
+                        screen = _create_display(fullscreen)
                     elif event.key == pygame.K_SPACE and kois:
                         for k in kois:
                             k.scatter()

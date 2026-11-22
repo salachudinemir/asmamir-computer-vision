@@ -7,12 +7,15 @@ import random
 pygame.init()
 W, H = 1000, 750
 screen = pygame.display.set_mode((W, H))
-pygame.display.set_caption("Stippling Particle Art Generator")
+pygame.display.set_caption("Monalisa - Stippling Particle Art")
 clock = pygame.time.Clock()
 
 BG_COLOR = (0, 0, 0)
-MAX_POINTS = 150000
-IMAGE_NAME = "monalisa.jpg"
+MAX_POINTS = 300000
+MAX_HEIGHT = 750
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+IMAGE_PATH = os.path.join(BASE_DIR, "assets", "monalisa.jpg")
 # Reveal order: "waterfall" = top-to-bottom (y then x); "shuffle" = random
 FILL_MODE = "waterfall"
 
@@ -28,7 +31,7 @@ def load_and_prepare_image(path):
         cv2.putText(gray, "MONALISA", (W//2 - 200, H//2), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 3)
         return gray
 
-gray_img = load_and_prepare_image(IMAGE_NAME)
+gray_img = load_and_prepare_image(IMAGE_PATH)
 
 # Generate stippling points based on pixel darkness (rejection sampling / weighted distribution)
 points = []

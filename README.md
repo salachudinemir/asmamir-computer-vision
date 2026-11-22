@@ -12,7 +12,7 @@ Download these yourself. Do not add them to git:
 - Mixamo FBX clips. The Mixamo license generally does not allow redistributing the FBX files. The names the code expects, in `web/hologram/`, are `asmamir_situp_to_idle.fbx`, `asmamir_rumba_dancing.fbx`, `asmamir_salsa_dancing.fbx`, and `asmamir_dancing_twerk.fbx`.
 - Other 3D models (`*.glb`, `*.usdz`, `*.npz`), textures, and the folders `web/hologram/source/`, `web/airbus/`, and `web/deagle/`.
 - `.env`, `venv/`, `dataset/`, `dataset_aug/`, and local logs.
-- CCTV sample clips, annotated `output_speed.mp4`, `speed_log.csv`, and YOLO weight files such as `yolov8m.pt` / `yolov8s.pt`.
+- CCTV sample clips, annotated `output_speed.mp4`, `speed_log.csv`, and YOLO weight files under `models/` such as `models/yolov8m.pt` / `models/yolov8s.pt`.
 - The raw `struktur_folder.txt` dump (often multi‑MB and includes `venv/` / caches). Use `docs/folder-summary.txt` instead.
 
 Without the FBX clips the app can still wake, but the hologram has no motion.
@@ -100,7 +100,7 @@ python animation\koi_fish.py
 
 ## CCTV speed tracker
 
-`cctv/cctv_speed_tracker.py` is standalone. It is not started by a voice command. It needs an NVIDIA CUDA GPU, PyTorch with CUDA, `ultralytics`, `opencv-python`, and `numpy`. Place a local clip such as `cctv/sample_traffic.mp4` (or `sample_traffic.mp4.mp4`) next to the script, or point `VIDEO_IN` at an RTSP/HLS URL. Weights default to `yolov8m.pt`.
+`cctv/cctv_speed_tracker.py` is standalone. It is not started by a voice command. It needs an NVIDIA CUDA GPU, PyTorch with CUDA, `ultralytics`, `opencv-python`, and `numpy`. Place a local clip such as `cctv/sample_traffic.mp4` (or `sample_traffic.mp4.mp4`) next to the script, or point `VIDEO_IN` at an RTSP/HLS URL. Weights default to `models/yolov8m.pt` (gitignored; place `yolov8m.pt` or `yolov8s.pt` under `models/`).
 
 ```bat
 venv\Scripts\python.exe cctv\cctv_speed_tracker.py

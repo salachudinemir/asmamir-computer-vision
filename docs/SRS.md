@@ -110,7 +110,7 @@ Detect objects, track them with ByteTrack, and estimate speed via a Bird's-Eye V
 
 1. **GPU check (`main()`).** Requires `torch.cuda.is_available()`. Raises `RuntimeError` if CUDA is missing. Resolves `VIDEO_IN` from `sample_traffic.mp4` or `sample_traffic.mp4.mp4` beside the script; sets `VIDEO_OUT` and `LOG_CSV` under the same folder.
 2. **Open and reconnect (`open_stream_with_retry()`).** Opens with `cv2.VideoCapture`, up to `MAX_RECONNECT_ATTEMPTS = 10` with `RECONNECT_DELAY_SEC = 2.0`, and RTSP over TCP (`OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;tcp`). On mid-run disconnect, reconnects and clears `bev_history`, `speed_smooth`, `last_kph`, and `last_detections`.
-3. **Detect and track.** `YOLO(MODEL_PATH).track(..., persist=True, tracker="bytetrack.yaml", device=0, half=True)` every `DETECT_EVERY_N_FRAMES = 3` frames at `IMGSZ = 512`. Classes: `0` Otoped/Person, `1` Bicycle, `2` Car, `3` Motorcycle, `5` Bus, `7` Truck.
+3. **Detect and track.** `YOLO(MODEL_PATH).track(..., persist=True, tracker="bytetrack.yaml", device=0, half=True)` every `DETECT_EVERY_N_FRAMES = 3` frames at `IMGSZ = 512`, with `MODEL_PATH` resolved to `models/yolov8m.pt` under the repo root. Classes: `0` Otoped/Person, `1` Bicycle, `2` Car, `3` Motorcycle, `5` Bus, `7` Truck.
 4. **BEV speed.** Foot point `(cx, bottom_y)` must lie in `SRC_ROAD_L` or `SRC_ROAD_R`. Project with `HL` / `HR`. Distance over `STEP_FRAMES = 5` becomes km/h using `dt = 1.0 / fps`. Keep values in `(MIN_PLAUSIBLE_KPH, MAX_PLAUSIBLE_KPH)` = (2, 160), clamp step changes with `MAX_DELTA_KPH_PER_FRAME = 12.0`, smooth with `HISTORY_LEN = 25`.
 5. **Display and export.** Color by speed thresholds `SPEED_GREEN = 60` and `SPEED_YELLOW = 100`; show km/h after `MIN_TRACK_FRAMES = 10`; optional ROI polygons; write `output_speed.mp4` when `SAVE_OUTPUT_VIDEO = True`; live preview capped at `PREVIEW_MAX_WIDTH = 1280` when `SHOW_LIVE_WINDOW = True`; write `speed_log.csv` at the end.
 
@@ -118,7 +118,7 @@ Detect objects, track them with ByteTrack, and estimate speed via a Bird's-Eye V
 
 | Parameter | Default | Notes |
 | --- | --- | --- |
-| `MODEL_PATH` | `"yolov8m.pt"` | YOLOv8 weights (`yolov8s.pt` or `yolov8m.pt`). |
+| `MODEL_PATH` | `models/yolov8m.pt` (repo-root relative) | YOLOv8 weights under `models/` (`yolov8s.pt` or `yolov8m.pt`); gitignored. |
 | `IMGSZ` | `512` | Inference input size. |
 | `CONF_THRES` / `IOU_THRES` | `0.25` / `0.50` | Confidence and NMS IoU. |
 | `DETECT_EVERY_N_FRAMES` | `3` | Detection/tracking stride. |
@@ -161,4 +161,4 @@ Detect objects, track them with ByteTrack, and estimate speed via a Bird's-Eye V
 
 - The road is treated as flat in the homography plane; the CCTV camera is static.
 - COCO has no separate otoped class; otoped is represented via `person` (class 0).
-- Sample video, annotated mp4, CSV logs, and YOLO `.pt` weights are local artifacts and are not committed.
+- Sample video, annotated mp4, CSV logs, and YOLO `.pt` weights under `models/` (for example `models/yolov8m.pt`, `models/yolov8s.pt`) are local artifacts and are not committed.

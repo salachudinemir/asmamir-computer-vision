@@ -51,6 +51,7 @@ animation/  (standalone scripts; not voice modes)
 cctv/  (standalone speed tracker; not a voice mode)
   cctv_speed_tracker.py
   (local only, gitignored): sample_traffic*.mp4, output_speed.mp4, speed_log.csv, other clips
+  MODEL_PATH → models/yolov8m.pt (weights under models/, not repo root)
 
 docs/
   DOKUMENTASI.md

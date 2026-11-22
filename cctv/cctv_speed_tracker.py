@@ -37,8 +37,8 @@ SHOW_BEV_POLYGONS = False
 SAVE_OUTPUT_VIDEO = True
 DETECT_EVERY_N_FRAMES = 3
 
-# Pengaturan model & GPU inferensi
-MODEL_PATH = "yolov8m.pt"
+# Pengaturan model & GPU inferensi (weights live under repo models/, gitignored)
+MODEL_PATH = str(BASE_DIR.parent / "models" / "yolov8m.pt")
 IMGSZ = 512
 CONF_THRES = 0.25
 IOU_THRES = 0.50

@@ -67,7 +67,7 @@ A trimmed inventory lives in [folder-summary.txt](folder-summary.txt). The full 
 
 ## CCTV speed tracker
 
-`cctv/cctv_speed_tracker.py` is a standalone traffic speed estimator. It is not a voice mode and `app.py` does not import it. It combines Ultralytics YOLOv8, ByteTrack, and a Bird's-Eye View (BEV) homography to estimate vehicle speed from a local file (for example `cctv/sample_traffic.mp4` at 1920×1080 @ 50.0 fps) or an RTSP/HLS stream. It requires an NVIDIA CUDA GPU (FP16). It draws speed-colored boxes, can write `cctv/output_speed.mp4`, and writes `cctv/speed_log.csv`. Sample video, annotated output, CSV logs, and YOLO weight files stay out of git. Full requirements are in [SRS.md](SRS.md) section 11 (FR-01…FR-07, NFR-01…NFR-04).
+`cctv/cctv_speed_tracker.py` is a standalone traffic speed estimator. It is not a voice mode and `app.py` does not import it. It combines Ultralytics YOLOv8, ByteTrack, and a Bird's-Eye View (BEV) homography to estimate vehicle speed from a local file (for example `cctv/sample_traffic.mp4` at 1920×1080 @ 50.0 fps) or an RTSP/HLS stream. It requires an NVIDIA CUDA GPU (FP16). `MODEL_PATH` defaults to `models/yolov8m.pt` (swap to `models/yolov8s.pt` if needed). It draws speed-colored boxes, can write `cctv/output_speed.mp4`, and writes `cctv/speed_log.csv`. Sample video, annotated output, CSV logs, and YOLO weight files under `models/` stay out of git. Full requirements are in [SRS.md](SRS.md) section 11 (FR-01…FR-07, NFR-01…NFR-04).
 
 ## Companions
 

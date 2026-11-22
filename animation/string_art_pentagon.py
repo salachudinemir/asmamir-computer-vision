@@ -1,4 +1,4 @@
-from turtle import *
+from turtle import Screen, Turtle, clear, color, done, goto, ht, pd, pu
 
 screen = Screen()
 screen.bgcolor("black")
@@ -19,7 +19,7 @@ def start_animation():
         turtle_obj.ht()
         turtle_obj.width(3)
         turtle_obj.up()
-        turtle_obj.goto(30)
+        turtle_obj.goto(30, 0)
         turtle_obj.seth(120 * c[t.index(turtle_obj)])
         turtle_obj.seth(0)
 

@@ -1,5 +1,5 @@
-"""Generate tools/ketik.wav (mechanical click) next to this script."""
-from click_sound import WAV_PATH, ensure_wav
+"""Verify tools/ketik.mp3 (mechanical click) used by click_sound."""
+from click_sound import MP3_PATH, prepare
 
-path = ensure_wav(WAV_PATH)
-print(f"{path} dibuat (mechanic click)")
+path = prepare()
+print(f"{path} siap (mechanic click; expected {MP3_PATH.resolve()})")

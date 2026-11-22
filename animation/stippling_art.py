@@ -10,14 +10,23 @@ screen = pygame.display.set_mode((W, H))
 pygame.display.set_caption("Monalisa - Stippling Particle Art")
 clock = pygame.time.Clock()
 
-BG_COLOR = (0, 0, 0)
-MAX_POINTS = 300000
+# Classic stipple: light paper, black ink
+BG_COLOR = (248, 246, 240)
+DOT_COLOR = (12, 12, 12)
+MAX_POINTS = 600000
 MAX_HEIGHT = 750
+# Grid step (finer than 3 → more candidates, sharper form)
+STEP = 1
+# Contrast >1 expands midtones; gamma >1 concentrates dots in dark regions
+CONTRAST = 1.45
+GAMMA = 1.75
+JITTER = 0.45
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 IMAGE_PATH = os.path.join(BASE_DIR, "assets", "monalisa.jpg")
 # Reveal order: "waterfall" = top-to-bottom (y then x); "shuffle" = random
 FILL_MODE = "waterfall"
+
 
 def load_and_prepare_image(path):
     if os.path.exists(path):
@@ -28,21 +37,34 @@ def load_and_prepare_image(path):
     else:
         # Fallback placeholder if image not found
         gray = np.zeros((H, W), dtype=np.uint8)
-        cv2.putText(gray, "MONALISA", (W//2 - 200, H//2), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 3)
+        cv2.putText(gray, "MONALISA", (W // 2 - 200, H // 2), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 3)
         return gray
 
-gray_img = load_and_prepare_image(IMAGE_PATH)
 
-# Generate stippling points based on pixel darkness (rejection sampling / weighted distribution)
+def prepare_darkness_map(gray):
+    """Stretch contrast, then gamma-weight darkness so dark areas get denser dots."""
+    g = gray.astype(np.float32) / 255.0
+    g = np.clip((g - 0.5) * CONTRAST + 0.5, 0.0, 1.0)
+    darkness = np.power(1.0 - g, GAMMA)
+    return darkness
+
+
+gray_img = load_and_prepare_image(IMAGE_PATH)
+darkness = prepare_darkness_map(gray_img)
+
+# Generate stippling points: rejection sampling weighted by darkness
 points = []
 print("Generating stippling points...")
 h, w = gray_img.shape
-for y in range(0, h, 3):
-    for x in range(0, w, 3):
-        # Darkness probability (inverted gray)
-        val = 255 - gray_img[y, x]
-        if random.randint(0, 255) < val:
-            points.append((x + random.uniform(-1.5, 1.5), y + random.uniform(-1.5, 1.5)))
+for y in range(0, h, STEP):
+    for x in range(0, w, STEP):
+        if random.random() < float(darkness[y, x]):
+            points.append(
+                (
+                    x + random.uniform(-JITTER, JITTER),
+                    y + random.uniform(-JITTER, JITTER),
+                )
+            )
 
 # Subsample first so density stays image-wide; then order the reveal.
 if len(points) > MAX_POINTS:
@@ -54,9 +76,12 @@ if FILL_MODE == "waterfall":
 else:
     random.shuffle(points)
 
+print(f"Ready: {len(points)} points (step={STEP}, gamma={GAMMA}, contrast={CONTRAST})")
+
 current_count = 0
-batch_size = 2000
+batch_size = 2500
 running = True
+font = pygame.font.SysFont("Arial", 16)
 
 while running:
     for event in pygame.event.get():
@@ -73,14 +98,17 @@ while running:
     if current_count < len(points):
         current_count = min(len(points), current_count + batch_size)
 
-    # Draw points
+    # Draw points (black ink on light paper)
     for i in range(current_count):
         pt = points[i]
-        screen.set_at((int(pt[0]), int(pt[1])), (220, 220, 220))
+        screen.set_at((int(pt[0]), int(pt[1])), DOT_COLOR)
 
     # UI overlay info
-    font = pygame.font.SysFont("Arial", 16)
-    txt = font.render(f"Points: {current_count} / {len(points)} | Press 'R' to restart, ESC to exit", True, (150, 150, 150))
+    txt = font.render(
+        f"Points: {current_count} / {len(points)} | Press 'R' to restart, ESC to exit",
+        True,
+        (90, 90, 90),
+    )
     screen.blit(txt, (20, H - 30))
 
     pygame.display.flip()

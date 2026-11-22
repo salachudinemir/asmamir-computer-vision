@@ -12,6 +12,7 @@ Download these yourself. Do not add them to git:
 - Mixamo FBX clips. The Mixamo license generally does not allow redistributing the FBX files. The names the code expects, in `web/hologram/`, are `asmamir_situp_to_idle.fbx`, `asmamir_rumba_dancing.fbx`, `asmamir_salsa_dancing.fbx`, and `asmamir_dancing_twerk.fbx`.
 - Other 3D models (`*.glb`, `*.usdz`, `*.npz`), textures, and the folders `web/hologram/source/`, `web/airbus/`, and `web/deagle/`.
 - `.env`, `venv/`, `dataset/`, `dataset_aug/`, and local logs.
+- CCTV sample clips, annotated `output_speed.mp4`, `speed_log.csv`, and YOLO weight files such as `yolov8m.pt` / `yolov8s.pt`.
 
 Without the FBX clips the app can still wake, but the hologram has no motion.
 
@@ -91,6 +92,16 @@ python animation\koi_fish.py
 `ascii_reveal` writes an mp4. The others open a window. `stippling_art` expects a local `monalisa.jpg` next to the script, and that image is not committed. Generated mp4 files are not committed.
 
 `animation/koi_fish.py` is a standalone pygame Realistic Living Koi Pond: `RealisticKoi` (full body/fins/barbels/3D shadow, 32-segment spine) on a procedural pond bed (depth gradient, stones) with caustics and swaying lily/lotus. Left click: ripples + feed pellets + attract; pellets disappear on contact. Right click: wider double ripples, no feed. Esc quits. Requires `pygame`.
+
+## CCTV speed tracker
+
+`cctv/cctv_speed_tracker.py` is standalone. It is not started by a voice command. It needs an NVIDIA CUDA GPU, PyTorch with CUDA, `ultralytics`, `opencv-python`, and `numpy`. Place a local clip such as `cctv/sample_traffic.mp4` (or `sample_traffic.mp4.mp4`) next to the script, or point `VIDEO_IN` at an RTSP/HLS URL. Weights default to `yolov8m.pt`.
+
+```bat
+venv\Scripts\python.exe cctv\cctv_speed_tracker.py
+```
+
+The script tracks classes 0, 1, 2, 3, 5, 7 with ByteTrack, estimates km/h via a BEV homography, shows a live preview (max width 1280), writes `cctv/output_speed.mp4` when `SAVE_OUTPUT_VIDEO` is true, and writes `cctv/speed_log.csv` (`track_id`, `class`, `frames_tracked`, `avg_kph`, `max_kph`). Press `q` or Ctrl+C to stop. Requirements: [docs/SRS.md](docs/SRS.md) section 11 (FR-01…FR-07, NFR-01…NFR-04). Product summary: [docs/PRD.md](docs/PRD.md).
 
 ## License
 

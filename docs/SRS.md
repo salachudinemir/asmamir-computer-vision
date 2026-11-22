@@ -89,3 +89,74 @@ The operator starts the assistant by running `python app.py` or `python -m app.p
 2. If nothing is listening on port 3080, `app.py` runs `scripts/start_dsh.cmd`, which starts `ollama launch dsh` only when that process is not already running.
 3. If port 11434 is quiet, `app.py` starts `ollama serve`.
 4. On process exit the app stops listeners on 11434, 8642, and 3080, and stops `ollama serve`, `ollama launch dsh`, and the Hermes gateway.
+
+## 11. CCTV speed tracker
+
+`cctv/cctv_speed_tracker.py` is a standalone script. `app.py` does not import it. No voice phrase starts it.
+
+### 11.1 Purpose and scope
+
+Detect objects, track them with ByteTrack, and estimate speed via a Bird's-Eye View (BEV) homography on local traffic video or a network stream. Annotated video and a CSV speed log are optional outputs.
+
+### 11.2 Operational environment
+
+- OS: Windows 11 (PowerShell and a Python venv).
+- Hardware: NVIDIA CUDA GPU (tested on NVIDIA GeForce RTX 3070 Laptop GPU).
+- Software: Python 3.12 (venv), PyTorch with CUDA, ultralytics (YOLO), opencv-python (`cv2`), numpy.
+
+### 11.3 Architecture
+
+1. **GPU check (`main()`).** Requires `torch.cuda.is_available()`. Raises `RuntimeError` if CUDA is missing. Resolves `VIDEO_IN` from `sample_traffic.mp4` or `sample_traffic.mp4.mp4` beside the script; sets `VIDEO_OUT` and `LOG_CSV` under the same folder.
+2. **Open and reconnect (`open_stream_with_retry()`).** Opens with `cv2.VideoCapture`, up to `MAX_RECONNECT_ATTEMPTS = 10` with `RECONNECT_DELAY_SEC = 2.0`, and RTSP over TCP (`OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;tcp`). On mid-run disconnect, reconnects and clears `bev_history`, `speed_smooth`, `last_kph`, and `last_detections`.
+3. **Detect and track.** `YOLO(MODEL_PATH).track(..., persist=True, tracker="bytetrack.yaml", device=0, half=True)` every `DETECT_EVERY_N_FRAMES = 3` frames at `IMGSZ = 512`. Classes: `0` Otoped/Person, `1` Bicycle, `2` Car, `3` Motorcycle, `5` Bus, `7` Truck.
+4. **BEV speed.** Foot point `(cx, bottom_y)` must lie in `SRC_ROAD_L` or `SRC_ROAD_R`. Project with `HL` / `HR`. Distance over `STEP_FRAMES = 5` becomes km/h using `dt = 1.0 / fps`. Keep values in `(MIN_PLAUSIBLE_KPH, MAX_PLAUSIBLE_KPH)` = (2, 160), clamp step changes with `MAX_DELTA_KPH_PER_FRAME = 12.0`, smooth with `HISTORY_LEN = 25`.
+5. **Display and export.** Color by speed thresholds `SPEED_GREEN = 60` and `SPEED_YELLOW = 100`; show km/h after `MIN_TRACK_FRAMES = 10`; optional ROI polygons; write `output_speed.mp4` when `SAVE_OUTPUT_VIDEO = True`; live preview capped at `PREVIEW_MAX_WIDTH = 1280` when `SHOW_LIVE_WINDOW = True`; write `speed_log.csv` at the end.
+
+### 11.4 Configuration defaults
+
+| Parameter | Default | Notes |
+| --- | --- | --- |
+| `MODEL_PATH` | `"yolov8m.pt"` | YOLOv8 weights (`yolov8s.pt` or `yolov8m.pt`). |
+| `IMGSZ` | `512` | Inference input size. |
+| `CONF_THRES` / `IOU_THRES` | `0.25` / `0.50` | Confidence and NMS IoU. |
+| `DETECT_EVERY_N_FRAMES` | `3` | Detection/tracking stride. |
+| `VEHICLE_CLASSES` | `{0, 1, 2, 3, 5, 7}` | COCO class IDs → display labels. |
+| `LANE_WIDTH_M` | `3.50` | Lane width for calibration (m). |
+| `NUM_LANES_LEFT` / `NUM_LANES_RIGHT` | `3` / `2` | → `ROAD_WIDTH_L_M = 10.5`, `ROAD_WIDTH_R_M = 7.0`. |
+| `SRC_ROAD_L`, `SRC_ROAD_R` | 4×2 float32 arrays | Left/right road ROI polygons (sample 1920×1080). |
+| `BEV_SCALE` / `VISIBLE_LENGTH_M` | `18` / `45` | px per metre and BEV length (m). |
+| `MIN_TRACK_FRAMES` | `10` | Frames before km/h is shown. |
+| `STEP_FRAMES` / `HISTORY_LEN` | `5` / `25` | Displacement sample and smoothing window. |
+| `MAX_DELTA_KPH_PER_FRAME` | `12.0` | Max km/h change per update. |
+| `MIN_PLAUSIBLE_KPH` / `MAX_PLAUSIBLE_KPH` | `2` / `160` | Valid speed range. |
+| `SPEED_GREEN` / `SPEED_YELLOW` | `60` / `100` | Display color thresholds (km/h). |
+| `MAX_RECONNECT_ATTEMPTS` / `RECONNECT_DELAY_SEC` | `10` / `2.0` | Stream open/retry. |
+| `SHOW_LIVE_WINDOW` / `PREVIEW_MAX_WIDTH` | `True` / `1280` | Preview and max width. |
+| `SHOW_BEV_POLYGONS` / `SAVE_OUTPUT_VIDEO` | `False` / `True` | ROI overlay and `output_speed.mp4`. |
+
+### 11.5 Functional requirements
+
+| ID | Requirement | Specification |
+| --- | --- | --- |
+| FR-01 | Load video source and auto-reconnect | Read a local file (fallback `sample_traffic.mp4` / `sample_traffic.mp4.mp4`) or RTSP/HLS with retry up to `MAX_RECONNECT_ATTEMPTS`. |
+| FR-02 | Multi-object detect and track | Persistent ByteTrack for classes 0, 1, 2, 3, 5, 7. |
+| FR-03 | Road ROI filter | Validate foot point `(cx, y2)` inside `SRC_ROAD_L` / `SRC_ROAD_R` before BEV. |
+| FR-04 | Speed estimate and smoothing | km/h from BEV and `src_fps`; filter 2–160; `MAX_DELTA_KPH_PER_FRAME`; average over `HISTORY_LEN`. |
+| FR-05 | Visual display and legend | Colors via `SPEED_GREEN` (60) / `SPEED_YELLOW` (100); labels after `MIN_TRACK_FRAMES`; speed bar; legend; optional ROI. |
+| FR-06 | Live preview and stop | Resize preview if wider than `PREVIEW_MAX_WIDTH`; clean stop on `q` or KeyboardInterrupt. |
+| FR-07 | Export video and CSV log | `output_speed.mp4` when `SAVE_OUTPUT_VIDEO`; `speed_log.csv` columns `track_id`, `class`, `frames_tracked`, `avg_kph`, `max_kph`. |
+
+### 11.6 Non-functional requirements
+
+| ID | Requirement | Specification |
+| --- | --- | --- |
+| NFR-01 | Performance and GPU | CUDA FP16 (`half=True`) is required; support detection stride and `IMGSZ`. |
+| NFR-02 | Time consistency | Use the source `src_fps` (for example 50.0 on the sample clip). |
+| NFR-03 | Reliability | `finally` releases capture, writer, and windows; clear history on reconnect. |
+| NFR-04 | Configuration | Calibration is centralized (`LANE_WIDTH_M`, `NUM_LANES_*`, `BEV_SCALE`, `VISIBLE_LENGTH_M`, `SRC_ROAD_*`). |
+
+### 11.7 Assumptions and limits
+
+- The road is treated as flat in the homography plane; the CCTV camera is static.
+- COCO has no separate otoped class; otoped is represented via `person` (class 0).
+- Sample video, annotated mp4, CSV logs, and YOLO `.pt` weights are local artifacts and are not committed.

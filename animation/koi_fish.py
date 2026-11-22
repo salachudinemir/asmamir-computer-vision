@@ -1,22 +1,21 @@
 """
-Standalone pygame pixel koi pond.
+Standalone pygame koi pond.
 
-Dark-navy aquarium with nearest-neighbor pixel koi (Kohaku / Asagi / Yamabuki
-and kin), slender ~5:1 silhouette with fan pectorals / pelvic fins / forked
-V-tail, soft slow horizontal swim, lily pads, and pink lotus. Interactive:
-click/tap calls fish, Space scatters, ripples on the surface. No HUD.
+Default: interactive fish using local sprites under `animation/assets/koi/`
+(white / asagi / gold / platinum / tea / black PNG, GIF frames when usable)
+on an aquarium bed laid out from `aquarium.svg` (gradients + lily/lotus
+placements). Click/tap calls fish, Space scatters, ripples. No HUD.
+
+Procedural pixel coats remain as `--procedural` / missing-asset fallback.
+Optional full-pond keyed MP4 overlay (`--overlay` / `O`) still available.
 
 Look & swim ideas inspired by git-koi-aquarium
-(https://github.com/reginaldalfret/git-koi-aquarium, MIT) — silhouette proportions,
-fin layout, variety coats, fish under botanicals — rewritten as original
-pygame code (not a port or wholesale copy of their Go or PNG/GIF assets).
-
-Optional full-pond keyed MP4 overlay (`--overlay` / `O`) still available;
-pixel interactive fish are the default.
+(https://github.com/reginaldalfret/git-koi-aquarium, MIT).
 
 Run:
     python animation/koi_fish.py
     python animation/koi_fish.py --fullscreen
+    python animation/koi_fish.py --procedural
     python animation/koi_fish.py --overlay
 """
 
@@ -26,6 +25,7 @@ import argparse
 import math
 import os
 import random
+import re
 import sys
 from enum import Enum, auto
 from pathlib import Path
@@ -39,9 +39,34 @@ W, H = 1150, 720
 screen: pygame.Surface | None = None
 clock = pygame.time.Clock()
 _ASSETS_DIR = Path(__file__).resolve().parent / "assets"
-DEFAULT_MP4_PATH = _ASSETS_DIR / "koi_fish_swimming_animated_overlay.mp4"
+KOI_ASSETS_DIR = _ASSETS_DIR / "koi"
+AQUARIUM_SVG_PATH = KOI_ASSETS_DIR / "aquarium.svg"
+DEFAULT_MP4_PATH = (
+    KOI_ASSETS_DIR / "koi_fish_swimming_animated_overlay.mp4"
+    if (KOI_ASSETS_DIR / "koi_fish_swimming_animated_overlay.mp4").is_file()
+    else _ASSETS_DIR / "koi_fish_swimming_animated_overlay.mp4"
+)
 OVERLAY_OPACITY = 1.0
 OVERLAY_CACHE_MAX_MB = 700.0
+
+# Local asset stems ↔ spawn variety names (procedural palette aliases kept).
+ASSET_STEMS = ("white", "asagi", "gold", "platinum", "tea", "black")
+VARIETY_TO_STEM: dict[str, str] = {
+    "white": "white",
+    "kohaku": "white",
+    "asagi": "asagi",
+    "gold": "gold",
+    "yamabuki": "gold",
+    "platinum": "platinum",
+    "ogon": "platinum",
+    "tea": "tea",
+    "chagoi": "tea",
+    "black": "black",
+    "karasu": "black",
+}
+SPRITE_TARGET_W = 150
+GIF_FRAME_STEP = 5
+GIF_MAX_FRAMES = 24
 
 # Pixel atlas: slender ~5:1 body (git-koi silhouette feel), nearest-neighbor upscale.
 PIXEL_SCALE = 3
@@ -142,7 +167,7 @@ def _create_display(fullscreen: bool) -> pygame.Surface:
         surf = pygame.display.set_mode((W, H), flags, vsync=1)
     except TypeError:
         surf = pygame.display.set_mode((W, H), flags)
-    pygame.display.set_caption("Pixel Koi Pond")
+    pygame.display.set_caption("Koi Pond")
     return surf
 
 
@@ -447,8 +472,345 @@ class PixelKoiAtlas:
         frames = self._frames.get(variety) or self._frames["kohaku"]
         n = len(frames)
         t = (phase * 0.55) % (2.0 * (n - 1))
-        idx = int(t) if t <= (n - 1) else int(2.0 * (n - 1) - t)
+        if t <= (n - 1):
+            idx = int(round(t))
+        else:
+            idx = int(round(2.0 * (n - 1) - t))
         return frames[max(0, min(n - 1, idx))]
+
+
+def _try_import_pil():
+    try:
+        from PIL import Image  # type: ignore
+
+        return Image
+    except ImportError:
+        return None
+
+
+def _pil_to_surface(im) -> pygame.Surface:
+    rgba = im.convert("RGBA")
+    surf = pygame.image.frombuffer(rgba.tobytes(), rgba.size, "RGBA").copy()
+    if pygame.display.get_surface() is not None:
+        return surf.convert_alpha()
+    return surf
+
+
+def _face_sprite_plus_x(surf: pygame.Surface) -> pygame.Surface:
+    """Orient snout toward +X (right) to match procedural atlas / draw().
+
+    Local `assets/koi/*.png` top-down sprites face −X (snout left). Detect by
+    comparing tip mass: forked tail usually carries more alpha than the snout.
+    """
+    w, h = surf.get_width(), surf.get_height()
+    if w < 8:
+        return surf
+
+    def tip_mass(x0: int, x1: int) -> int:
+        total = 0
+        for x in range(max(0, x0), min(w, x1)):
+            for y in range(h):
+                if surf.get_at((x, y))[3] > 20:
+                    total += 1
+        return total
+
+    band = max(2, w // 5)
+    left = tip_mass(0, band)
+    right = tip_mass(w - band, w)
+    # Heavier tip = tail. We want tail on the left, snout on the right.
+    if right >= left:
+        return pygame.transform.flip(surf, True, False)
+    return surf
+
+
+def _scale_sprite(surf: pygame.Surface, target_w: int = SPRITE_TARGET_W) -> pygame.Surface:
+    w, h = surf.get_size()
+    if w <= 0 or h <= 0:
+        return surf
+    # Prefer landscape fish; if portrait, rotate 90° first.
+    if h > w * 1.25:
+        surf = pygame.transform.rotate(surf, -90)
+        w, h = surf.get_size()
+    scale = target_w / float(w)
+    nw = max(8, int(w * scale))
+    nh = max(8, int(h * scale))
+    return pygame.transform.smoothscale(surf, (nw, nh))
+
+
+def _crop_alpha_surface(surf: pygame.Surface, pad: int = 4) -> pygame.Surface:
+    w, h = surf.get_size()
+    xs: list[int] = []
+    ys: list[int] = []
+    for y in range(h):
+        for x in range(w):
+            if surf.get_at((x, y))[3] > 20:
+                xs.append(x)
+                ys.append(y)
+    if not xs:
+        return surf
+    x0 = max(0, min(xs) - pad)
+    y0 = max(0, min(ys) - pad)
+    x1 = min(w - 1, max(xs) + pad)
+    y1 = min(h - 1, max(ys) + pad)
+    return surf.subsurface((x0, y0, x1 - x0 + 1, y1 - y0 + 1)).copy()
+
+
+def _load_png_frames(stem: str, Image) -> list[pygame.Surface]:
+    path = KOI_ASSETS_DIR / f"{stem}.png"
+    if not path.is_file():
+        return []
+    im = Image.open(path)
+    bbox = im.convert("RGBA").getbbox()
+    if bbox:
+        im = im.crop(bbox)
+    surf = _face_sprite_plus_x(_crop_alpha_surface(_pil_to_surface(im)))
+    return [_scale_sprite(surf)]
+
+
+def _load_gif_frames(stem: str, Image) -> list[pygame.Surface]:
+    path = KOI_ASSETS_DIR / f"{stem}.gif"
+    if not path.is_file():
+        return []
+    im = Image.open(path)
+    n = int(getattr(im, "n_frames", 1) or 1)
+    frames: list[pygame.Surface] = []
+    indices = list(range(0, n, GIF_FRAME_STEP))[:GIF_MAX_FRAMES]
+    if not indices:
+        indices = [0]
+    for idx in indices:
+        try:
+            im.seek(idx)
+        except EOFError:
+            break
+        frame = im.convert("RGBA")
+        bbox = frame.getbbox()
+        if bbox:
+            frame = frame.crop(bbox)
+        surf = _pil_to_surface(frame)
+        surf = _crop_alpha_surface(surf)
+        w, h = surf.get_size()
+        # Orbital GIFs are near-square diagonals; keep only landscape-ish crops.
+        if w < 40 or h < 20 or h > w * 1.35:
+            continue
+        surf = _face_sprite_plus_x(surf)
+        frames.append(_scale_sprite(surf))
+    return frames
+
+
+class AssetKoiAtlas:
+    """Sprite atlas from `animation/assets/koi/*.{png,gif}`."""
+
+    def __init__(self) -> None:
+        self._frames: dict[str, list[pygame.Surface]] = {}
+        self.loaded_stems: list[str] = []
+        self.source_files: list[str] = []
+        Image = _try_import_pil()
+        if Image is None or not KOI_ASSETS_DIR.is_dir():
+            return
+        for stem in ASSET_STEMS:
+            png_frames = _load_png_frames(stem, Image)
+            gif_frames = _load_gif_frames(stem, Image)
+            # Prefer PNG for interactive heading; GIF only when crops are landscape.
+            good_gif = [
+                f for f in gif_frames if f.get_width() >= f.get_height() * 1.25
+            ]
+            if png_frames:
+                frames = png_frames
+                src = "png"
+            elif good_gif:
+                frames = good_gif
+                src = "gif"
+            elif gif_frames:
+                frames = gif_frames
+                src = "gif"
+            else:
+                continue
+            self._frames[stem] = frames
+            self.loaded_stems.append(stem)
+            used = f"{stem}.{src}"
+            self.source_files.append(used)
+            # Alias procedural variety names onto the same stem.
+            for variety, mapped in VARIETY_TO_STEM.items():
+                if mapped == stem:
+                    self._frames[variety] = frames
+
+    @property
+    def available(self) -> bool:
+        return bool(self.loaded_stems)
+
+    def frame(self, variety: str, phase: float) -> pygame.Surface:
+        stem = VARIETY_TO_STEM.get(variety, variety)
+        frames = self._frames.get(variety) or self._frames.get(stem)
+        if not frames:
+            # Any loaded stem as last resort.
+            frames = next(iter(self._frames.values()))
+        n = len(frames)
+        if n == 1:
+            return frames[0]
+        t = (phase * 0.55) % (2.0 * (n - 1))
+        # Ping-pong index (shared with PixelKoiAtlas).
+        if t <= (n - 1):
+            i = int(round(t))
+        else:
+            i = int(round(2 * (n - 1) - t))
+        return frames[max(0, min(n - 1, i))]
+
+
+def _parse_svg_aquarium_layout(svg_text: str) -> dict:
+    """Read colors + botanical placements from aquarium.svg (no external SVG renderer)."""
+    vb = re.search(r'viewBox="([^"]+)"', svg_text)
+    parts = [float(x) for x in vb.group(1).split()] if vb else [0.0, 0.0, 1000.0, 420.0]
+    _, _, vw, vh = parts[0], parts[1], parts[2], parts[3]
+    bg_m = re.search(r"background:\s*(#[0-9a-fA-F]{3,8})", svg_text)
+    bg = bg_m.group(1) if bg_m else "#050d1a"
+
+    def hex_rgb(h: str) -> tuple[int, int, int]:
+        h = h.lstrip("#")
+        if len(h) == 3:
+            h = "".join(c * 2 for c in h)
+        return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+    stops: list[tuple[float, tuple[int, int, int]]] = []
+    block = re.search(
+        r'<radialGradient id="pondDeep"[\s\S]*?</radialGradient>', svg_text
+    )
+    if block:
+        for sm in re.finditer(
+            r'stop offset="([\d.]+)%"\s+stop-color="(#[0-9a-fA-F]+)"', block.group(0)
+        ):
+            stops.append((float(sm.group(1)) / 100.0, hex_rgb(sm.group(2))))
+    if not stops:
+        stops = [
+            (0.0, (10, 32, 64)),
+            (0.5, (6, 20, 40)),
+            (1.0, (2, 8, 16)),
+        ]
+
+    botanicals: list[tuple[str, float, float, float, float]] = []
+    for m in re.finditer(
+        r'<g\s+transform="translate\(([^,]+),\s*([^)]+)\)([^"]*)"\s*>\s*'
+        r'<use\s+href="#([^"]+)"',
+        svg_text,
+    ):
+        tx, ty = float(m.group(1)), float(m.group(2))
+        rest = m.group(3)
+        kind = m.group(4)
+        rot = 0.0
+        scale = 1.0
+        rm = re.search(r"rotate\(([^)]+)\)", rest)
+        if rm:
+            rot = float(rm.group(1).split()[0])
+        sm = re.search(r"scale\(([^)]+)\)", rest)
+        if sm:
+            scale = float(sm.group(1).split()[0])
+        botanicals.append((kind, tx, ty, rot, scale))
+
+    return {
+        "vw": vw,
+        "vh": vh,
+        "bg": hex_rgb(bg),
+        "stops": stops,
+        "botanicals": botanicals,
+    }
+
+
+def _lerp_color(
+    a: tuple[int, int, int], b: tuple[int, int, int], t: float
+) -> tuple[int, int, int]:
+    t = max(0.0, min(1.0, t))
+    return (
+        int(a[0] + (b[0] - a[0]) * t),
+        int(a[1] + (b[1] - a[1]) * t),
+        int(a[2] + (b[2] - a[2]) * t),
+    )
+
+
+def _sample_gradient(
+    stops: list[tuple[float, tuple[int, int, int]]], t: float
+) -> tuple[int, int, int]:
+    t = max(0.0, min(1.0, t))
+    for i in range(len(stops) - 1):
+        t0, c0 = stops[i]
+        t1, c1 = stops[i + 1]
+        if t0 <= t <= t1:
+            u = 0.0 if t1 <= t0 else (t - t0) / (t1 - t0)
+            return _lerp_color(c0, c1, u)
+    return stops[-1][1]
+
+
+def create_aquarium_bed_from_svg(svg_path: Path = AQUARIUM_SVG_PATH) -> pygame.Surface | None:
+    """Build pond bed from aquarium.svg palette (radial pondDeep over viewBox bg)."""
+    if not svg_path.is_file():
+        return None
+    try:
+        layout = _parse_svg_aquarium_layout(svg_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, re.error):
+        return None
+    bed = pygame.Surface((W, H))
+    bed.fill(layout["bg"])
+    cx, cy = W * 0.5, H * 0.45
+    max_d = math.hypot(cx, cy)
+    stops = layout["stops"]
+    for y in range(0, H, 2):
+        for x in range(0, W, 2):
+            d = math.hypot(x - cx, y - cy) / max_d
+            col = _sample_gradient(stops, d)
+            pygame.draw.rect(bed, col, (x, y, 2, 2))
+    # Soft vignette (SVG #vignette).
+    vignette = pygame.Surface((W, H), pygame.SRCALPHA)
+    for y in range(0, H, 4):
+        for x in range(0, W, 4):
+            d = math.hypot(x - cx, y - cy) / max_d
+            if d > 0.6:
+                a = int(min(140, (d - 0.6) / 0.4 * 140))
+                pygame.draw.rect(vignette, (0, 0, 0, a), (x, y, 4, 4))
+    bed.blit(vignette, (0, 0))
+    # Thin frame echo from SVG stroke.
+    pygame.draw.rect(bed, (56, 189, 248), bed.get_rect(), 1)
+    return bed
+
+
+def svg_botanical_specs(
+    svg_path: Path = AQUARIUM_SVG_PATH,
+) -> list[tuple[float, float, float, float, bool, float]] | None:
+    """Map SVG lily/lotus placements into draw_botanicals pad tuples (scaled to W×H)."""
+    if not svg_path.is_file():
+        return None
+    try:
+        layout = _parse_svg_aquarium_layout(svg_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, re.error):
+        return None
+    vw, vh = float(layout["vw"]), float(layout["vh"])
+    sx, sy = W / vw, H / vh
+    pads: list[tuple[float, float, float, float, bool, float]] = []
+    for kind, tx, ty, rot, scale in layout["botanicals"]:
+        if not kind.startswith("lily") and kind not in ("lotus", "lotusBud"):
+            continue
+        base_r = {"lilyLg": 70.0, "lilyMd": 48.0, "lilySm": 34.0}.get(kind, 40.0)
+        has_flower = kind in ("lotus", "lotusBud") or (
+            kind == "lilyLg" and abs(rot) < 20
+        )
+        if kind == "lotus":
+            base_r = 22.0
+        elif kind == "lotusBud":
+            base_r = 14.0
+            has_flower = True
+        pads.append(
+            (
+                tx * sx,
+                ty * sy,
+                base_r,
+                math.radians(rot),
+                has_flower and kind.startswith("lily"),
+                scale,
+            )
+        )
+        if kind == "lotus":
+            # Flower sits on nearest pad; mark last lily-like as flower if needed.
+            if pads:
+                x, y, r, notch, _, sc = pads[-1]
+                pads[-1] = (x, y, max(r, 36.0), notch, True, sc)
+    return pads or None
 
 
 def _key_video_frame_bgr(
@@ -830,7 +1192,7 @@ class PixelKoi:
                 self._face_left = False
                 self._face_flip_cd = FACE_FLIP_CD
 
-    def draw(self, surf: pygame.Surface, atlas: PixelKoiAtlas) -> None:
+    def draw(self, surf: pygame.Surface, atlas: PixelKoiAtlas | AssetKoiAtlas) -> None:
         img = atlas.frame(self.variety, self.phase)
         depth_scale = 1.12 - self.depth * 0.28
         zoom = self.scale * depth_scale
@@ -888,17 +1250,22 @@ def create_pond_bed() -> pygame.Surface:
     return bed
 
 
-def draw_botanicals(surf: pygame.Surface, t: float) -> None:
-    pads = [
-        (110, 95, 70, 0.4, True, 1.0),
-        (175, 145, 48, 2.1, False, 0.85),
-        (70, 160, 36, 1.2, False, 0.7),
-        (1040, 560, 78, 3.5, True, 1.1),
-        (980, 620, 52, 0.8, False, 0.9),
-        (1085, 500, 40, 2.4, False, 0.75),
-        (1000, 80, 44, 1.5, False, 0.7),
-        (90, 600, 38, 0.3, False, 0.65),
-    ]
+def draw_botanicals(
+    surf: pygame.Surface,
+    t: float,
+    pads: list[tuple[float, float, float, float, bool, float]] | None = None,
+) -> None:
+    if pads is None:
+        pads = [
+            (110, 95, 70, 0.4, True, 1.0),
+            (175, 145, 48, 2.1, False, 0.85),
+            (70, 160, 36, 1.2, False, 0.7),
+            (1040, 560, 78, 3.5, True, 1.1),
+            (980, 620, 52, 0.8, False, 0.9),
+            (1085, 500, 40, 2.4, False, 0.75),
+            (1000, 80, 44, 1.5, False, 0.7),
+            (90, 600, 38, 0.3, False, 0.65),
+        ]
     for px, py, rad, notch, has_flower, scale in pads:
         sway_x = math.sin(t * 0.55 + px * 0.01) * 2.2
         sway_y = math.cos(t * 0.48 + py * 0.01) * 1.8
@@ -983,7 +1350,7 @@ class Ripple:
 
 
 def _parse_args(argv: list[str] | None = None):
-    parser = argparse.ArgumentParser(description="Standalone pygame pixel koi pond")
+    parser = argparse.ArgumentParser(description="Standalone pygame koi pond")
     parser.add_argument(
         "--mp4",
         type=Path,
@@ -1003,6 +1370,17 @@ def _parse_args(argv: list[str] | None = None):
         action="store_true",
         help="Start fullscreen (F11 toggles; SCALED logical 1150x720).",
     )
+    parser.add_argument(
+        "--procedural",
+        action="store_true",
+        help="Force procedural pixel coats / bed (skip animation/assets/koi).",
+    )
+    parser.add_argument(
+        "--assets",
+        type=Path,
+        default=KOI_ASSETS_DIR,
+        help="Folder with aquarium.svg and fish PNG/GIF sprites.",
+    )
     return parser.parse_args(argv)
 
 
@@ -1018,7 +1396,7 @@ def _load_overlay(path: Path) -> KoiOverlayVideo | None:
     return overlay
 
 
-def _spawn_koi() -> list[PixelKoi]:
+def _spawn_koi(use_assets: bool = False) -> list[PixelKoi]:
     # Flattened ellipses → more horizontal lap feel (like git-koi lap courses).
     circuits = [
         SoftCircuit(W * 0.5, H * 0.48, 400, 140, 0.00),
@@ -1032,26 +1410,48 @@ def _spawn_koi() -> list[PixelKoi]:
         SoftCircuit(W * 0.58, H * 0.58, 210, 55, 0.15),
     ]
     # Speeds kept deliberately low; ~18 fish; scale down a bit for longer sprites.
-    specs = [
-        (circuits[0], "kohaku", 24, 0.92, 0.05),
-        (circuits[0], "yamabuki", 22, 0.88, 0.55),
-        (circuits[0], "asagi", 21, 0.86, 0.30),
-        (circuits[1], "asagi", 20, 0.84, 0.10),
-        (circuits[1], "kohaku", 19, 0.78, 0.65),
-        (circuits[2], "kohaku", 20, 0.82, 0.20),
-        (circuits[2], "yamabuki", 18, 0.76, 0.72),
-        (circuits[3], "asagi", 19, 0.80, 0.40),
-        (circuits[3], "karasu", 18, 0.74, 0.75),
-        (circuits[4], "ogon", 20, 0.78, 0.15),
-        (circuits[4], "chagoi", 17, 0.72, 0.80),
-        (circuits[5], "chagoi", 19, 0.80, 0.60),
-        (circuits[5], "ogon", 18, 0.74, 0.35),
-        (circuits[6], "kohaku", 21, 0.86, 0.45),
-        (circuits[6], "karasu", 17, 0.70, 0.88),
-        (circuits[7], "yamabuki", 18, 0.76, 0.22),
-        (circuits[8], "asagi", 19, 0.78, 0.58),
-        (circuits[8], "chagoi", 16, 0.68, 0.05),
-    ]
+    if use_assets:
+        specs = [
+            (circuits[0], "white", 24, 0.92, 0.05),
+            (circuits[0], "gold", 22, 0.88, 0.55),
+            (circuits[0], "asagi", 21, 0.86, 0.30),
+            (circuits[1], "asagi", 20, 0.84, 0.10),
+            (circuits[1], "white", 19, 0.78, 0.65),
+            (circuits[2], "white", 20, 0.82, 0.20),
+            (circuits[2], "gold", 18, 0.76, 0.72),
+            (circuits[3], "asagi", 19, 0.80, 0.40),
+            (circuits[3], "black", 18, 0.74, 0.75),
+            (circuits[4], "platinum", 20, 0.78, 0.15),
+            (circuits[4], "tea", 17, 0.72, 0.80),
+            (circuits[5], "tea", 19, 0.80, 0.60),
+            (circuits[5], "platinum", 18, 0.74, 0.35),
+            (circuits[6], "white", 21, 0.86, 0.45),
+            (circuits[6], "black", 17, 0.70, 0.88),
+            (circuits[7], "gold", 18, 0.76, 0.22),
+            (circuits[8], "asagi", 19, 0.78, 0.58),
+            (circuits[8], "tea", 16, 0.68, 0.05),
+        ]
+    else:
+        specs = [
+            (circuits[0], "kohaku", 24, 0.92, 0.05),
+            (circuits[0], "yamabuki", 22, 0.88, 0.55),
+            (circuits[0], "asagi", 21, 0.86, 0.30),
+            (circuits[1], "asagi", 20, 0.84, 0.10),
+            (circuits[1], "kohaku", 19, 0.78, 0.65),
+            (circuits[2], "kohaku", 20, 0.82, 0.20),
+            (circuits[2], "yamabuki", 18, 0.76, 0.72),
+            (circuits[3], "asagi", 19, 0.80, 0.40),
+            (circuits[3], "karasu", 18, 0.74, 0.75),
+            (circuits[4], "ogon", 20, 0.78, 0.15),
+            (circuits[4], "chagoi", 17, 0.72, 0.80),
+            (circuits[5], "chagoi", 19, 0.80, 0.60),
+            (circuits[5], "ogon", 18, 0.74, 0.35),
+            (circuits[6], "kohaku", 21, 0.86, 0.45),
+            (circuits[6], "karasu", 17, 0.70, 0.88),
+            (circuits[7], "yamabuki", 18, 0.76, 0.22),
+            (circuits[8], "asagi", 19, 0.78, 0.58),
+            (circuits[8], "chagoi", 16, 0.68, 0.05),
+        ]
     fish: list[PixelKoi] = []
     for circ, variety, speed, scale, phase in specs:
         own = SoftCircuit(circ.cx, circ.cy, circ.rx, circ.ry, phase)
@@ -1063,14 +1463,54 @@ def _spawn_koi() -> list[PixelKoi]:
 
 
 def main(argv: list[str] | None = None):
-    global screen
+    global screen, KOI_ASSETS_DIR, AQUARIUM_SVG_PATH
 
     args = _parse_args(argv)
     fullscreen = bool(args.fullscreen)
     screen = _create_display(fullscreen)
-    pond_bed = create_pond_bed()
-    atlas = PixelKoiAtlas()
-    kois = _spawn_koi()
+
+    assets_dir = Path(args.assets)
+    KOI_ASSETS_DIR = assets_dir
+    AQUARIUM_SVG_PATH = assets_dir / "aquarium.svg"
+
+    asset_atlas: AssetKoiAtlas | None = None
+    use_assets = False
+    if not args.procedural:
+        asset_atlas = AssetKoiAtlas()
+        use_assets = bool(asset_atlas.available)
+        if use_assets:
+            print(
+                f"[koi] Asset sprites: {', '.join(asset_atlas.source_files)}",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"[koi] No usable sprites in {assets_dir}; procedural coats.",
+                file=sys.stderr,
+            )
+
+    svg_bed = None if args.procedural else create_aquarium_bed_from_svg(AQUARIUM_SVG_PATH)
+    if svg_bed is not None:
+        pond_bed = svg_bed
+        print(f"[koi] Aquarium bed from {AQUARIUM_SVG_PATH.name}", file=sys.stderr)
+    else:
+        pond_bed = create_pond_bed()
+        if not args.procedural and AQUARIUM_SVG_PATH.is_file():
+            print("[koi] SVG bed parse failed; procedural bed.", file=sys.stderr)
+
+    botanical_pads = None if args.procedural else svg_botanical_specs(AQUARIUM_SVG_PATH)
+    if botanical_pads:
+        print(
+            f"[koi] Botanicals from aquarium.svg ({len(botanical_pads)} pads)",
+            file=sys.stderr,
+        )
+
+    atlas: PixelKoiAtlas | AssetKoiAtlas
+    if use_assets and asset_atlas is not None:
+        atlas = asset_atlas
+    else:
+        atlas = PixelKoiAtlas()
+    kois = _spawn_koi(use_assets=use_assets)
 
     source_mp4 = Path(args.overlay) if isinstance(args.overlay, Path) else Path(args.mp4)
     want_overlay = args.overlay is not None or isinstance(args.overlay, Path)
@@ -1110,6 +1550,35 @@ def main(argv: list[str] | None = None):
                             k.scatter()
                         for k in kois:
                             ripples.append(Ripple(k.x, k.y, max_r=90, strength=0.7))
+                    elif event.key == pygame.K_p:
+                        # Toggle asset sprites ↔ procedural coats (keep swim state).
+                        if isinstance(atlas, AssetKoiAtlas):
+                            atlas = PixelKoiAtlas()
+                            for k in kois:
+                                stem = VARIETY_TO_STEM.get(k.variety, k.variety)
+                                rev = {
+                                    "white": "kohaku",
+                                    "gold": "yamabuki",
+                                    "platinum": "ogon",
+                                    "tea": "chagoi",
+                                    "black": "karasu",
+                                    "asagi": "asagi",
+                                }
+                                k.variety = rev.get(stem, "kohaku")
+                            print("[koi] Procedural coats (P)", file=sys.stderr)
+                        else:
+                            asset_atlas = AssetKoiAtlas()
+                            if asset_atlas.available:
+                                atlas = asset_atlas
+                                for k in kois:
+                                    k.variety = VARIETY_TO_STEM.get(
+                                        k.variety, k.variety
+                                    )
+                                print(
+                                    f"[koi] Asset sprites (P): "
+                                    f"{', '.join(asset_atlas.source_files)}",
+                                    file=sys.stderr,
+                                )
                     elif event.key == pygame.K_o:
                         if overlay is None:
                             overlay = _load_overlay(source_mp4)
@@ -1134,7 +1603,7 @@ def main(argv: list[str] | None = None):
             else:
                 for k in sorted(kois, key=lambda f: f.depth, reverse=True):
                     k.update(dt, kois)
-                    k.draw(screen, atlas)
+                    k.draw(screen, atlas)  # type: ignore[arg-type]
 
                 ripple_timer += dt
                 if ripple_timer > 1.1:
@@ -1168,7 +1637,7 @@ def main(argv: list[str] | None = None):
                 if r.alpha <= 2:
                     ripples.remove(r)
 
-            draw_botanicals(screen, sim_time)
+            draw_botanicals(screen, sim_time, botanical_pads)
             pygame.display.flip()
     finally:
         if overlay is not None:

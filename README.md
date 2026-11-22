@@ -79,15 +79,18 @@ The same process can also count fingers, read a page, apply camera filters, and 
 
 ## Standalone animations
 
-`animation/` is not started by a voice command. From the project folder, use dotted module names with `-m` (`python -m animation.string_art`) or run the file path (`python .\animation\string_art.py`). Do not pass a Windows relative path to `-m` (for example `python -m .\animation\string_art.py` fails). The shareable scripts are `aqua_mandala`, `ascii_reveal`, `botanical_lily`, `butterfly_curve`, `clover_art`, `cosmic_bloom`, `flower`, `make_a_wish`, `math_plate`, `neon_thread_heart`, `radar_scanner`, `rose_art`, `spiderman_particles`, `stippling_art`, and `string_art`.
+`animation/` is not started by a voice command. From the project folder, use dotted module names with `-m` (`python -m animation.string_art`) or run the file path (`python .\animation\string_art.py`). Do not pass a Windows relative path to `-m` (for example `python -m .\animation\string_art.py` fails). The shareable scripts are `aqua_mandala`, `ascii_reveal`, `botanical_lily`, `butterfly_curve`, `clover_art`, `cosmic_bloom`, `flower`, `koi_fish`, `make_a_wish`, `math_plate`, `neon_thread_heart`, `radar_scanner`, `rose_art`, `spiderman_particles`, `stippling_art`, and `string_art`.
 
 ```bat
 python -m animation.ascii_reveal --image path\to\image.jpg --out animation\reveal.mp4
 python -m animation.string_art
 python -m animation.stippling_art
+python animation\koi_fish.py
 ```
 
 `ascii_reveal` writes an mp4. The others open a window. `stippling_art` expects a local `monalisa.jpg` next to the script, and that image is not committed. Generated mp4 files are not committed.
+
+`animation/koi_fish.py` is a standalone pygame koi pond (original code; ideas only from nagomi’s click-call / scatter / ripples / depth / swim-state variety). Click or tap to call the fish, press Space to scatter, watch fading ripples and depth-based scale/opacity/shadow. Esc quits. Requires `pygame`.
 
 ## License
 

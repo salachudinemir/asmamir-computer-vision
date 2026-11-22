@@ -1,17 +1,18 @@
 """
 Standalone pygame koi pond.
 
-Default: interactive procedural RealisticKoi (click-call, Space scatter, ripples,
-swim states, depth). Smooth 60 FPS pond loop with SCALED + vsync when available.
+Default: interactive RealisticKoi (click-call, Space scatter, ripples, swim states,
+depth) drawn with keyed fish sprites extracted from the local overlay MP4 when present.
+Procedural vector draw is the fallback if the asset or OpenCV is missing, or when
+sprites are toggled off (`--procedural` / `P`).
 
-MP4 overlay is optional only (`--overlay` or `O`). When the overlay is on, procedural
-fish are hidden so the two modes never mix. Overlay frames are chroma-keyed once into
-pygame Surfaces; the hot loop only advances a frame index. Overlay off by default —
-no MP4 load cost unless requested.
+Optional full-pond MP4 overlay (`--overlay` or `O`) still hides interactive fish while
+active. Smooth 60 FPS with SCALED + vsync when available.
 
 Run:
     python animation/koi_fish.py
     python animation/koi_fish.py --fullscreen
+    python animation/koi_fish.py --procedural
     python animation/koi_fish.py --overlay
 """
 
@@ -44,6 +45,12 @@ DEFAULT_OVERLAY_MP4 = _ASSETS_DIR / "koi_fish_swimming_animated_overlay.mp4"
 OVERLAY_OPACITY = 1.0
 # Soft cap for the keyed Surface cache (~474 MiB for 150 frames @ 1150x720 RGBA).
 OVERLAY_CACHE_MAX_MB = 700.0
+# Sprite bank: fish crops from the same MP4 (default look for RealisticKoi).
+SPRITE_MAX_COUNT = 28
+SPRITE_FRAME_STRIDE = 8
+SPRITE_MIN_AREA = 28_000
+SPRITE_MAX_AREA = 185_000
+SPRITE_TARGET_LENGTH = 220.0  # normalize crops before per-fish scaling
 
 
 def _try_import_cv2():
@@ -94,6 +101,175 @@ def _key_checkerboard_bgr(frame_bgr, chroma_max: float = 18.0, gray_lo: float = 
     else:
         alpha = np.where(hard, np.uint8(0), np.uint8(255))
     return alpha
+
+
+class KoiSpriteBank:
+    """Keyed fish crops from the overlay MP4 for blitting onto RealisticKoi."""
+
+    def __init__(
+        self,
+        path: Path,
+        max_sprites: int = SPRITE_MAX_COUNT,
+        frame_stride: int = SPRITE_FRAME_STRIDE,
+    ):
+        self.path = Path(path)
+        self._sprites: list[tuple[pygame.Surface, float, float]] = []
+        self._ok = False
+        self._open(max_sprites=max_sprites, frame_stride=frame_stride)
+
+    @property
+    def available(self) -> bool:
+        return self._ok and bool(self._sprites)
+
+    def __len__(self) -> int:
+        return len(self._sprites)
+
+    def close(self) -> None:
+        self._sprites.clear()
+        self._ok = False
+
+    def pick(self, fish_index: int, phase: float) -> tuple[pygame.Surface, float, float] | None:
+        """Return (surface, heading_rad, body_length_px); surface nose ≈ heading."""
+        if not self.available:
+            return None
+        n = len(self._sprites)
+        # Slow phase walk so each fish cycles distinct swim poses.
+        idx = (fish_index * 3 + int(phase * 0.55)) % n
+        return self._sprites[idx]
+
+    def _open(self, max_sprites: int, frame_stride: int) -> None:
+        if not self.path.is_file():
+            return
+        cv2 = _try_import_cv2()
+        if cv2 is None:
+            print(f"[koi] OpenCV unavailable; sprite bank skipped ({self.path.name}).", file=sys.stderr)
+            return
+        import numpy as np
+
+        print(f"[koi] Extracting fish sprites from {self.path.name}…", file=sys.stderr)
+        cap = cv2.VideoCapture(str(self.path))
+        if not cap.isOpened():
+            print(f"[koi] Could not open sprite source: {self.path}", file=sys.stderr)
+            return
+
+        sprites: list[tuple[pygame.Surface, float, float]] = []
+        frame_i = 0
+        while len(sprites) < max_sprites:
+            ok, frame = cap.read()
+            if not ok or frame is None:
+                break
+            if frame_i % max(1, frame_stride) != 0:
+                frame_i += 1
+                continue
+            frame_i += 1
+            alpha = _key_checkerboard_bgr(frame)
+            binm = (alpha > 128).astype(np.uint8)
+            binm = cv2.morphologyEx(binm, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8), iterations=1)
+            num, labels, stats, _centroids = cv2.connectedComponentsWithStats(binm, 8)
+            # Largest fish first so we keep the best crops when capping.
+            order = sorted(
+                range(1, num),
+                key=lambda i: int(stats[i, cv2.CC_STAT_AREA]),
+                reverse=True,
+            )
+            for i in order:
+                if len(sprites) >= max_sprites:
+                    break
+                area = int(stats[i, cv2.CC_STAT_AREA])
+                bw = int(stats[i, cv2.CC_STAT_WIDTH])
+                bh = int(stats[i, cv2.CC_STAT_HEIGHT])
+                if area < SPRITE_MIN_AREA or area > SPRITE_MAX_AREA:
+                    continue
+                if max(bw, bh) < 140:
+                    continue
+                aspect = max(bw, bh) / max(1, min(bw, bh))
+                # Merged two-fish blobs are near-square and huge — skip.
+                if aspect < 1.18 and area > 150_000:
+                    continue
+                cropped = self._crop_component(frame, alpha, labels, stats, i, cv2, np)
+                if cropped is None:
+                    continue
+                rgba, heading, _length = cropped
+                surf = self._rgba_to_surface(rgba, target_length=SPRITE_TARGET_LENGTH)
+                if surf is None:
+                    continue
+                # Length after normalize ≈ SPRITE_TARGET_LENGTH.
+                sprites.append((surf, heading, float(SPRITE_TARGET_LENGTH)))
+
+        cap.release()
+        if not sprites:
+            print(f"[koi] No fish sprites extracted from {self.path.name}.", file=sys.stderr)
+            return
+        self._sprites = sprites
+        self._ok = True
+        print(f"[koi] Sprite bank ready: {len(sprites)} keyed fish crops.", file=sys.stderr)
+
+    @staticmethod
+    def _crop_component(frame_bgr, alpha, labels, stats, comp_i, cv2, np):
+        x = int(stats[comp_i, cv2.CC_STAT_LEFT])
+        y = int(stats[comp_i, cv2.CC_STAT_TOP])
+        w = int(stats[comp_i, cv2.CC_STAT_WIDTH])
+        h = int(stats[comp_i, cv2.CC_STAT_HEIGHT])
+        pad = 10
+        x0 = max(0, x - pad)
+        y0 = max(0, y - pad)
+        x1 = min(frame_bgr.shape[1], x + w + pad)
+        y1 = min(frame_bgr.shape[0], y + h + pad)
+        rgb = cv2.cvtColor(frame_bgr[y0:y1, x0:x1], cv2.COLOR_BGR2RGB)
+        a = alpha[y0:y1, x0:x1].copy()
+        lab = labels[y0:y1, x0:x1]
+        a = np.where(lab == comp_i, a, 0).astype(np.uint8)
+        ys, xs = np.where(a > 128)
+        if len(xs) < 80:
+            return None
+        pts = np.column_stack((xs.astype(np.float64), ys.astype(np.float64)))
+        mean = pts.mean(axis=0)
+        centered = pts - mean
+        cov = np.cov(centered, rowvar=False)
+        if not np.isfinite(cov).all():
+            return None
+        eigvals, eigvecs = np.linalg.eigh(cov)
+        axis = eigvecs[:, int(np.argmax(eigvals))]
+        proj = centered @ axis
+        lo = proj < np.percentile(proj, 12)
+        hi = proj > np.percentile(proj, 88)
+        bright = rgb.astype(np.float32).mean(axis=2)
+        lo_b = float(bright[ys[lo], xs[lo]].mean()) if lo.any() else 0.0
+        hi_b = float(bright[ys[hi], xs[hi]].mean()) if hi.any() else 0.0
+        heading = math.atan2(float(axis[1]), float(axis[0]))
+        # Prefer the brighter tip as the head (orange / white face).
+        if hi_b < lo_b:
+            heading += math.pi
+        length = float(np.percentile(proj, 95) - np.percentile(proj, 5))
+        length = max(length, float(max(w, h)) * 0.55)
+        rgba = np.dstack((rgb, a))
+        return rgba, heading, length
+
+    @staticmethod
+    def _rgba_to_surface(rgba, target_length: float) -> pygame.Surface | None:
+        import numpy as np
+
+        h, w = rgba.shape[:2]
+        if w < 8 or h < 8:
+            return None
+        # Scale so the long side ≈ target_length (keeps rotozoom cheap).
+        long_side = max(w, h)
+        scale = target_length / float(long_side)
+        if abs(scale - 1.0) > 0.02:
+            nw = max(8, int(round(w * scale)))
+            nh = max(8, int(round(h * scale)))
+            cv2 = _try_import_cv2()
+            if cv2 is not None:
+                rgba = cv2.resize(rgba, (nw, nh), interpolation=cv2.INTER_AREA)
+            else:
+                tmp = pygame.image.frombuffer(
+                    np.ascontiguousarray(rgba).tobytes(), (w, h), "RGBA"
+                )
+                return pygame.transform.smoothscale(tmp.copy(), (nw, nh)).convert_alpha()
+        h, w = rgba.shape[:2]
+        buf = np.ascontiguousarray(rgba)
+        surf = pygame.image.frombuffer(buf.tobytes(), (w, h), "RGBA").convert_alpha()
+        return surf.copy()
 
 
 class KoiOverlayVideo:
@@ -264,7 +440,7 @@ def _tint_alpha(color, alpha):
 
 
 class RealisticKoi:
-    def __init__(self, x, y, angle, base_speed, scale, variety):
+    def __init__(self, x, y, angle, base_speed, scale, variety, sprite_index: int = 0):
         self.x = x
         self.y = y
         self.angle = angle
@@ -273,6 +449,7 @@ class RealisticKoi:
         self.base_scale = scale
         self.scale = scale
         self.variety = variety
+        self.sprite_index = sprite_index
 
         self.phase = random.uniform(0, 6.28)
         self.turn_vel = 0.0
@@ -508,7 +685,51 @@ class RealisticKoi:
         # Deeper fish look softer / more submerged.
         return max(0.35, min(1.0, 1.05 - self.depth * 0.55))
 
-    def draw(self, surf):
+    def draw(self, surf, sprites: KoiSpriteBank | None = None):
+        """Blit MP4 sprite when bank available; else procedural vector body."""
+        if sprites is not None and sprites.available:
+            if self._draw_sprite(surf, sprites):
+                return
+        self._draw_procedural(surf)
+
+    def _draw_sprite(self, surf: pygame.Surface, sprites: KoiSpriteBank) -> bool:
+        picked = sprites.pick(self.sprite_index, self.phase)
+        if picked is None:
+            return False
+        base, heading, body_len = picked
+        # Match procedural body length (~147 * scale) to the keyed crop.
+        target_len = max(48.0, 147.0 * self.scale)
+        zoom = target_len / max(1.0, body_len)
+        # pygame.rotozoom rotates CCW in degrees; align sprite heading → swim angle.
+        rot_deg = -math.degrees(self.angle - heading)
+        try:
+            img = pygame.transform.rotozoom(base, rot_deg, zoom)
+        except pygame.error:
+            return False
+        opacity = self._opacity()
+        if opacity < 0.99:
+            img = img.copy()
+            img.set_alpha(max(40, min(255, int(255 * opacity))))
+
+        # Soft elliptical shadow under the fish (depth cue).
+        shadow_ox = 10 + (1.0 - self.depth) * 14
+        shadow_oy = 12 + (1.0 - self.depth) * 16
+        sw, sh = img.get_width(), img.get_height()
+        shadow = pygame.Surface((sw, sh), pygame.SRCALPHA)
+        pygame.draw.ellipse(
+            shadow,
+            (2, 10, 14, int(22 + (1.0 - self.depth) * 34)),
+            shadow.get_rect().inflate(-int(sw * 0.18), -int(sh * 0.35)),
+        )
+        # Anchor near mid-body (slightly behind the head joint).
+        mid_i = min(6, self.num_joints - 1)
+        cx = self.joints[mid_i][0]
+        cy = self.joints[mid_i][1]
+        surf.blit(shadow, shadow.get_rect(center=(cx + shadow_ox, cy + shadow_oy)))
+        surf.blit(img, img.get_rect(center=(cx, cy)))
+        return True
+
+    def _draw_procedural(self, surf):
         opacity = self._opacity()
         shadow_strength = int(28 + (1.0 - self.depth) * 36)
         shadow_ox = 14 + (1.0 - self.depth) * 18
@@ -764,7 +985,12 @@ def draw_water_surface(surf, t):
         surf.blit(ps, (int(x - c), int(y - c)))
 
 
-def draw_hint(surf, elapsed, overlay_active: bool = False):
+def draw_hint(
+    surf,
+    elapsed,
+    overlay_active: bool = False,
+    sprites_active: bool = False,
+):
     """Brief on-screen control hint that fades after a few seconds."""
     if elapsed > HINT_FADE_S:
         return
@@ -774,14 +1000,16 @@ def draw_hint(surf, elapsed, overlay_active: bool = False):
         return
     if overlay_active:
         lines = [
-            "Overlay on — procedural fish hidden",
+            "Overlay on — interactive fish hidden",
             "Click / tap — ripples",
-            "O — procedural    F11 — fullscreen    Esc — quit",
+            "O — interactive    F11 — fullscreen    Esc — quit",
         ]
     else:
+        look = "sprites" if sprites_active else "procedural"
         lines = [
-            "Click / tap — call the koi",
-            "Space — scatter    O — overlay    F11 — fullscreen    Esc — quit",
+            f"Click / tap — call the koi ({look})",
+            "Space — scatter    P — sprites/procedural    O — overlay",
+            "F11 — fullscreen    Esc — quit",
         ]
     pad_x, pad_y = 14, 10
     rendered = [HINT_FONT.render(line, True, (220, 240, 250)) for line in lines]
@@ -801,15 +1029,19 @@ def draw_hint(surf, elapsed, overlay_active: bool = False):
 def _parse_args(argv: list[str] | None = None):
     parser = argparse.ArgumentParser(description="Standalone pygame koi pond")
     parser.add_argument(
+        "--procedural",
+        action="store_true",
+        help="Force procedural vector draw (skip MP4 fish sprites).",
+    )
+    parser.add_argument(
         "--overlay",
         nargs="?",
         const=DEFAULT_OVERLAY_MP4,
         default=None,
         type=Path,
         help=(
-            "Optional keyed MP4 overlay (path optional; default asset). "
-            "Off by default — procedural RealisticKoi stay interactive. "
-            "When on, procedural fish are hidden (O toggles)."
+            "Optional full-pond keyed MP4 overlay (path optional; default asset). "
+            "Off by default. When on, interactive RealisticKoi are hidden (O toggles)."
         ),
     )
     parser.add_argument(
@@ -833,12 +1065,24 @@ def _load_overlay(path: Path) -> KoiOverlayVideo | None:
     return overlay
 
 
+def _load_sprite_bank(path: Path) -> KoiSpriteBank | None:
+    """Extract keyed fish crops from MP4. Returns None if unavailable."""
+    candidate = Path(path)
+    if not candidate.is_file():
+        print(f"[koi] Sprite source missing ({candidate}); procedural draw.", file=sys.stderr)
+        return None
+    bank = KoiSpriteBank(candidate)
+    if not bank.available:
+        return None
+    return bank
+
+
 def _spawn_procedural_koi() -> list[RealisticKoi]:
     return [
-        RealisticKoi(420, 310, 0.3, 105, 1.18, "kohaku"),
-        RealisticKoi(740, 450, 3.4, 95, 1.12, "sanke"),
-        RealisticKoi(580, 520, -1.2, 88, 1.00, "showa"),
-        RealisticKoi(320, 500, -0.5, 92, 0.92, "ogon"),
+        RealisticKoi(420, 310, 0.3, 105, 1.18, "kohaku", sprite_index=0),
+        RealisticKoi(740, 450, 3.4, 95, 1.12, "sanke", sprite_index=1),
+        RealisticKoi(580, 520, -1.2, 88, 1.00, "showa", sprite_index=2),
+        RealisticKoi(320, 500, -0.5, 92, 0.92, "ogon", sprite_index=3),
     ]
 
 
@@ -850,20 +1094,34 @@ def main(argv: list[str] | None = None):
     screen = _create_display(fullscreen)
     pond_bed = create_pond_bed()
 
-    # Procedural fish are always the default interactive pond.
+    # Interactive RealisticKoi always spawn; look = MP4 sprites when available.
     kois: list[RealisticKoi] = _spawn_procedural_koi()
     overlay_path = Path(args.overlay) if args.overlay is not None else DEFAULT_OVERLAY_MP4
+    sprite_path = DEFAULT_OVERLAY_MP4
     want_overlay = args.overlay is not None
+    use_sprites = not bool(args.procedural)
+    sprites: KoiSpriteBank | None = None
+    if use_sprites:
+        sprites = _load_sprite_bank(sprite_path)
+        if sprites is None:
+            use_sprites = False
+            print("[koi] Falling back to procedural draw.", file=sys.stderr)
+        else:
+            print(
+                "[koi] Interactive pond with MP4 fish sprites (P toggles procedural).",
+                file=sys.stderr,
+            )
+    else:
+        print("[koi] Procedural draw (--procedural). P loads sprites if available.", file=sys.stderr)
+
     overlay: KoiOverlayVideo | None = None
     if want_overlay:
         overlay = _load_overlay(overlay_path)
         if overlay is not None:
             overlay.enabled = True
-            print("[koi] Overlay mode (procedural fish hidden). Press O for interactive.", file=sys.stderr)
+            print("[koi] Overlay mode (interactive fish hidden). Press O to return.", file=sys.stderr)
         else:
-            print("[koi] Staying on procedural interactive pond.", file=sys.stderr)
-    else:
-        print("[koi] Procedural interactive pond (O loads optional MP4 overlay).", file=sys.stderr)
+            print("[koi] Staying on interactive pond.", file=sys.stderr)
 
     ripples = []
     ripple_timer = 0.0
@@ -881,6 +1139,9 @@ def main(argv: list[str] | None = None):
             overlay_active = (
                 overlay is not None and overlay.available and overlay.enabled
             )
+            sprites_active = bool(
+                use_sprites and sprites is not None and sprites.available
+            )
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -896,25 +1157,41 @@ def main(argv: list[str] | None = None):
                             k.scatter()
                         for k in kois:
                             ripples.append(Ripple(k.x, k.y, max_r=90, strength=0.7))
+                    elif event.key == pygame.K_p and not overlay_active:
+                        if use_sprites and sprites is not None and sprites.available:
+                            use_sprites = False
+                            print("[koi] Procedural vector draw.", file=sys.stderr)
+                        else:
+                            if sprites is None:
+                                sprites = _load_sprite_bank(sprite_path)
+                            if sprites is not None and sprites.available:
+                                use_sprites = True
+                                print("[koi] MP4 fish sprites on.", file=sys.stderr)
+                            else:
+                                use_sprites = False
+                                print("[koi] Sprites unavailable; staying procedural.", file=sys.stderr)
+                        sprites_active = bool(
+                            use_sprites and sprites is not None and sprites.available
+                        )
                     elif event.key == pygame.K_o:
                         if overlay is None:
                             overlay = _load_overlay(overlay_path)
                             if overlay is not None:
                                 overlay.enabled = True
                                 print(
-                                    "[koi] Overlay on (procedural hidden).",
+                                    "[koi] Overlay on (interactive fish hidden).",
                                     file=sys.stderr,
                                 )
                         elif overlay.available:
                             overlay.enabled = not overlay.enabled
                             if overlay.enabled:
                                 print(
-                                    "[koi] Overlay on (procedural hidden).",
+                                    "[koi] Overlay on (interactive fish hidden).",
                                     file=sys.stderr,
                                 )
                             else:
                                 print(
-                                    "[koi] Overlay off — interactive procedural.",
+                                    "[koi] Overlay off — interactive pond.",
                                     file=sys.stderr,
                                 )
                         overlay_active = (
@@ -936,12 +1213,12 @@ def main(argv: list[str] | None = None):
                 overlay.update(dt)
                 overlay.draw(screen)
             else:
-                # Interactive procedural fish only when overlay is off (no mix).
+                bank = sprites if sprites_active else None
                 for k in sorted(kois, key=lambda fish: fish.depth, reverse=True):
                     k.update(dt)
-                    k.draw(screen)
+                    k.draw(screen, sprites=bank)
 
-                # Occasional ripples from near-surface procedural fish motion.
+                # Occasional ripples from near-surface fish motion.
                 ripple_timer += dt
                 if ripple_timer > 0.75:
                     ripple_timer = 0.0
@@ -976,12 +1253,19 @@ def main(argv: list[str] | None = None):
                     ripples.remove(r)
 
             draw_water_surface(screen, sim_time)
-            draw_hint(screen, sim_time, overlay_active=overlay_active)
+            draw_hint(
+                screen,
+                sim_time,
+                overlay_active=overlay_active,
+                sprites_active=sprites_active,
+            )
 
             pygame.display.flip()
     finally:
         if overlay is not None:
             overlay.close()
+        if sprites is not None:
+            sprites.close()
         pygame.quit()
 
 

@@ -90,7 +90,7 @@ python animation\koi_fish.py
 
 `ascii_reveal` writes an mp4. The others open a window. `stippling_art` expects a local `monalisa.jpg` next to the script, and that image is not committed. Generated mp4 files are not committed.
 
-`animation/koi_fish.py` is a standalone pygame koi pond. Default is interactive procedural `RealisticKoi` (click/tap call, Space scatter, ripples, swim states, depth; nagomi-inspired; original pygame). Smooth 60 FPS with `F11` / `--fullscreen` (SCALED + vsync when available). Optional keyed MP4 overlay (`--overlay` or `O`) uses `animation/assets/koi_fish_swimming_animated_overlay.mp4` (gitignored; provide locally) — OpenCV keys frames once into a Surface cache and plays them clock-synced. When overlay is on, procedural fish are hidden (no mix); `O` toggles back to interactive. Esc quits. Requires `pygame` (+ `opencv-python` only if you use the overlay).
+`animation/koi_fish.py` is a standalone pygame koi pond. Default is interactive `RealisticKoi` (click/tap call, Space scatter, ripples, swim states, depth; nagomi-inspired; original pygame) with fish **look** from keyed sprites extracted from local `animation/assets/koi_fish_swimming_animated_overlay.mp4` (gitignored; not committed). Missing asset / OpenCV failure / `--procedural` / `P` falls back to procedural vector draw. Smooth 60 FPS with `F11` / `--fullscreen` (SCALED + vsync when available). Optional full-pond keyed MP4 overlay (`--overlay` or `O`) hides interactive fish while on. Esc quits. Requires `pygame` (+ `opencv-python` for sprites/overlay).
 
 ## License
 

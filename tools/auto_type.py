@@ -3,8 +3,8 @@
 Uses tools/click_sound.py so ketik.mp3 plays reliably while pasting.
 
 Indent rule: paste each source line verbatim (leading spaces kept). Never lstrip.
-After Enter, clear VS Code auto-indent (Esc + Home/Shift+Home + Backspace) so the
-next paste is not shifted right on every def/block.
+After Enter, Shift+Tab outdent N times (N matches expected auto-indent) so the next
+paste is not shifted right. Never Home / Shift+Home / clear-line — those wipe upward.
 
 After typing into the focused editor:
   1. SAVE — write the demo source to tools/animasi.py on disk (Python I/O).
@@ -42,8 +42,10 @@ WAIT_SAVE_AS_OVERWRITE = 0.6
 WAIT_AFTER_DISK_WRITE = 0.4
 WAIT_TERMINAL_FOCUS = 0.8
 WAIT_BEFORE_RUN = 0.5
-# Brief settle after clearing editor auto-indent before the next clipboard paste.
+# Brief settle after Shift+Tab outdent before the next clipboard paste.
 WAIT_AFTER_DEDENT = 0.03
+# VS Code / Python editor tab width used to convert leading spaces → Shift+Tab count.
+TAB_SIZE = 4
 
 kode_turtle = """from turtle import (
     Terminator,
@@ -91,35 +93,54 @@ def paste_text(text: str, click: bool = True) -> None:
         play()
 
 
-def clear_editor_auto_indent() -> None:
-    """Cancel VS Code auto-indent on the current line so the next paste keeps source spaces.
+def leading_indent_levels(line: str, tab_size: int = TAB_SIZE) -> int:
+    """Count leading indent as whole tab-stop levels (spaces and tabs)."""
+    width = 0
+    for ch in line:
+        if ch == " ":
+            width += 1
+        elif ch == "\t":
+            width = (width // tab_size + 1) * tab_size
+        else:
+            break
+    if width <= 0:
+        return 0
+    return (width + tab_size - 1) // tab_size
 
-    After Enter, the editor inserts leading whitespace. Without clearing it, pasting a
+
+def clear_editor_auto_indent(levels: int) -> None:
+    """Cancel VS Code auto-indent via Shift+Tab only so the next paste keeps source spaces.
+
+    After Enter, the editor inserts leading whitespace. Without outdenting it, pasting a
     line that already has its own indent stacks and drifts right every def/block.
+
+    Do NOT use Home / Shift+End / Shift+Home / Backspace: from column 0, Shift+Home
+    selects the previous line and Backspace deletes code upward.
+    Extra Shift+Tab at column 0 is a no-op in VS Code.
     """
-    pyautogui.press("esc")
-    # Smart Home: first press → first non-ws, second → column 0.
-    pyautogui.press("home")
-    pyautogui.press("home")
-    # Select any leftover auto-indent on this line and delete it.
-    pyautogui.hotkey("shift", "end")
-    pyautogui.press("backspace")
-    # Second pass covers sticky/smart-home edge cases on empty indented lines.
-    pyautogui.hotkey("shift", "home")
-    pyautogui.press("backspace")
+    if levels > 0:
+        pyautogui.press("esc")
+        for _ in range(levels):
+            pyautogui.hotkey("shift", "tab")
     time.sleep(WAIT_AFTER_DEDENT)
 
 
 def type_lines(source: str, per_char: bool, pause: float) -> None:
     """Paste whole source lines with original leading spaces (no lstrip).
 
-    Prefer line paste of the exact source. After each Enter, clear editor auto-indent
-    before the next line so VS Code cannot re-indent on top of source spaces.
+    Prefer line paste of the exact source. After each Enter, Shift+Tab outdent N times
+    (N matches expected auto-indent from the previous line / next line) before the
+    next paste so VS Code cannot re-indent on top of source spaces.
     """
     lines = source.splitlines()
     for i, baris in enumerate(lines):
         if i > 0:
-            clear_editor_auto_indent()
+            prev = lines[i - 1]
+            prev_lv = leading_indent_levels(prev)
+            next_lv = leading_indent_levels(baris)
+            # Same level as prev, or +1 when prev opens a block (trailing ':').
+            guess = prev_lv + (1 if prev.rstrip().endswith(":") else 0)
+            clear_editor_auto_indent(max(guess, next_lv))
 
         # Special-case match uses stripped text; paste still uses exact `baris`.
         if baris.lstrip(" \t") == "done()":

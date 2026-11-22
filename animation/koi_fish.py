@@ -37,9 +37,6 @@ pygame.init()
 W, H = 1150, 720
 screen: pygame.Surface | None = None
 clock = pygame.time.Clock()
-HINT_FONT = pygame.font.SysFont("segoeui", 16)
-HINT_FADE_S = 12.0
-
 _ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 DEFAULT_MP4_PATH = _ASSETS_DIR / "koi_fish_swimming_animated_overlay.mp4"
 OVERLAY_OPACITY = 1.0
@@ -55,8 +52,8 @@ HEADING_SLEW_FAST = 3.2
 FACE_FLIP_COS = 0.42
 FACE_FLIP_SIN_MAX = 0.55
 FACE_FLIP_CD = 0.7
-SEPARATION_RADIUS = 110.0
-SEPARATION_GAIN = 55.0
+SEPARATION_RADIUS = 92.0
+SEPARATION_GAIN = 48.0
 
 # Palette inspired by classic Japanese morphs (original RGB choices).
 PALETTES: dict[str, dict[str, tuple[int, int, int]]] = {
@@ -451,7 +448,7 @@ class PixelKoi:
         self._face_left = math.cos(angle) < 0.0
         self._face_flip_cd = 0.0
         self._stroke_t = random.uniform(0, 1)
-        self._stroke_period = random.uniform(1.8, 2.6)
+        self._stroke_period = random.uniform(2.6, 3.8)
 
     def attract_to(self, tx: float, ty: float) -> None:
         self.call_target = (tx, ty)
@@ -600,11 +597,11 @@ class PixelKoi:
         self.x += math.cos(self.angle) * self.speed * dt
         self.y += math.sin(self.angle) * self.speed * dt
 
-        wave = 1.1 + self.speed * 0.04
+        wave = 0.75 + self.speed * 0.03
         if self.state == SwimState.DART:
-            wave = 2.2 + self.speed * 0.05
+            wave = 1.55 + self.speed * 0.04
         elif self.state == SwimState.REST:
-            wave = 0.7
+            wave = 0.45
         self.phase += wave * dt
 
         vdiff = _norm_pi(self.angle - self._visual_angle)
@@ -783,40 +780,6 @@ class Ripple:
             surf.blit(rs, (int(self.x - c), int(self.y - c)))
 
 
-def draw_hint(surf, elapsed, overlay_active: bool = False):
-    if elapsed > HINT_FADE_S:
-        return
-    fade = 1.0 if elapsed < HINT_FADE_S - 3.0 else max(0.0, (HINT_FADE_S - elapsed) / 3.0)
-    alpha = int(210 * fade)
-    if alpha < 8:
-        return
-    if overlay_active:
-        lines = [
-            "MP4 overlay on — interactive pixel koi hidden",
-            "Click / tap — ripples",
-            "O — interactive    F11 — fullscreen    Esc — quit",
-        ]
-    else:
-        lines = [
-            "Click / tap — call the koi (pixel pond)",
-            "Space — scatter    O — MP4 overlay",
-            "F11 — fullscreen    Esc — quit",
-        ]
-    pad_x, pad_y = 14, 10
-    rendered = [HINT_FONT.render(line, True, (210, 230, 245)) for line in lines]
-    box_w = max(r.get_width() for r in rendered) + pad_x * 2
-    box_h = sum(r.get_height() for r in rendered) + pad_y * 2 + 4
-    box = pygame.Surface((box_w, box_h), pygame.SRCALPHA)
-    pygame.draw.rect(box, (6, 16, 28, int(170 * fade)), (0, 0, box_w, box_h), border_radius=8)
-    pygame.draw.rect(box, (100, 170, 210, alpha), (0, 0, box_w, box_h), 1, border_radius=8)
-    y = pad_y
-    for r in rendered:
-        r.set_alpha(alpha)
-        box.blit(r, (pad_x, y))
-        y += r.get_height() + 2
-    surf.blit(box, (18, 16))
-
-
 def _parse_args(argv: list[str] | None = None):
     parser = argparse.ArgumentParser(description="Standalone pygame pixel koi pond")
     parser.add_argument(
@@ -861,16 +824,30 @@ def _spawn_koi() -> list[PixelKoi]:
         SoftCircuit(W * 0.50, H * 0.52, 220, 70, 0.00),
         SoftCircuit(W * 0.30, H * 0.68, 150, 55, 0.50),
         SoftCircuit(W * 0.70, H * 0.68, 150, 55, 0.00),
+        SoftCircuit(W * 0.48, H * 0.38, 280, 140, 0.25),
+        SoftCircuit(W * 0.42, H * 0.60, 200, 90, 0.70),
+        SoftCircuit(W * 0.58, H * 0.58, 190, 85, 0.15),
     ]
+    # Speeds kept deliberately low for a calm pixel-pond glide.
     specs = [
-        (circuits[0], "kohaku", 42, 1.05, 0.05),
-        (circuits[0], "yamabuki", 40, 1.00, 0.55),
-        (circuits[1], "asagi", 38, 0.95, 0.10),
-        (circuits[2], "kohaku", 36, 0.92, 0.20),
-        (circuits[3], "asagi", 34, 0.90, 0.40),
-        (circuits[4], "ogon", 36, 0.88, 0.15),
-        (circuits[5], "chagoi", 35, 0.90, 0.60),
-        (circuits[3], "karasu", 33, 0.85, 0.75),
+        (circuits[0], "kohaku", 24, 1.05, 0.05),
+        (circuits[0], "yamabuki", 22, 1.00, 0.55),
+        (circuits[0], "asagi", 21, 0.96, 0.30),
+        (circuits[1], "asagi", 20, 0.95, 0.10),
+        (circuits[1], "kohaku", 19, 0.88, 0.65),
+        (circuits[2], "kohaku", 20, 0.92, 0.20),
+        (circuits[2], "yamabuki", 18, 0.86, 0.72),
+        (circuits[3], "asagi", 19, 0.90, 0.40),
+        (circuits[3], "karasu", 18, 0.85, 0.75),
+        (circuits[4], "ogon", 20, 0.88, 0.15),
+        (circuits[4], "chagoi", 17, 0.82, 0.80),
+        (circuits[5], "chagoi", 19, 0.90, 0.60),
+        (circuits[5], "ogon", 18, 0.84, 0.35),
+        (circuits[6], "kohaku", 21, 0.98, 0.45),
+        (circuits[6], "karasu", 17, 0.80, 0.88),
+        (circuits[7], "yamabuki", 18, 0.87, 0.22),
+        (circuits[8], "asagi", 19, 0.89, 0.58),
+        (circuits[8], "chagoi", 16, 0.78, 0.05),
     ]
     fish: list[PixelKoi] = []
     for circ, variety, speed, scale, phase in specs:
@@ -989,7 +966,6 @@ def main(argv: list[str] | None = None):
                     ripples.remove(r)
 
             draw_botanicals(screen, sim_time)
-            draw_hint(screen, sim_time, overlay_active=overlay_active)
             pygame.display.flip()
     finally:
         if overlay is not None:

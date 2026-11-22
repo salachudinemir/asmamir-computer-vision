@@ -22,11 +22,16 @@ IMAGE_PATH = os.path.join(BASE_DIR, "assets", "spiderman-ref.png")
 
 MAX_WIDTH = 900
 MAX_HEIGHT = 900
-NUM_PARTICLES = 8000
+NUM_PARTICLES = 20000
+# Higher density → finer grid step when collecting stipple candidates.
+SAMPLE_DENSITY = 12
 # Skip near-black / near-white noise; keep suit + speed-line colors.
 MIN_LUMA = 28
 MAX_LUMA = 245
 BG_COLOR = (10, 11, 16)
+# Small radii for fine detail (drawn as at least 1px).
+PARTICLE_SIZE_MIN = 0.6
+PARTICLE_SIZE_MAX = 1.25
 
 pygame.init()
 
@@ -50,7 +55,7 @@ def sample_targets(surf, count):
     """Sample colored pixels as particle targets (skip near-empty luma)."""
     w, h = surf.get_size()
     candidates = []
-    step = max(1, int(math.sqrt((w * h) / (count * 4))))
+    step = max(1, int(math.sqrt((w * h) / (count * SAMPLE_DENSITY))))
     for y in range(0, h, step):
         for x in range(0, w, step):
             r, g, b, *_ = surf.get_at((x, y))
@@ -102,7 +107,7 @@ class Particle:
         self.vx = random.uniform(-3, 3)
         self.vy = random.uniform(-3, 3)
         self.color = color
-        self.size = random.uniform(1.2, 2.5)
+        self.size = random.uniform(PARTICLE_SIZE_MIN, PARTICLE_SIZE_MAX)
 
     def update(self, state, mouse_pos):
         if state == "forming":
@@ -129,7 +134,8 @@ class Particle:
             self.y -= math.sin(angle) * 6
 
     def draw(self, surface):
-        pygame.draw.circle(surface, self.color, (int(self.x), int(self.y)), int(self.size))
+        radius = max(1, int(round(self.size)))
+        pygame.draw.circle(surface, self.color, (int(self.x), int(self.y)), radius)
 
 
 particles = [Particle(targets[i][0], targets[i][1], colors[i]) for i in range(NUM_PARTICLES)]

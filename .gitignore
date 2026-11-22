@@ -32,7 +32,4 @@ web/deagle/
 animation/monalisa.jpg
 animation/assets/*.mp4
 animation/assets/*.gif
-animation/assets/koi/*.gif
-animation/assets/koi/*.mp4
-animation/assets/koi/*.svg
 tools/animasi.py

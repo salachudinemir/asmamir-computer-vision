@@ -47,42 +47,116 @@ WAIT_AFTER_DEDENT = 0.03
 # VS Code / Python editor tab width used to convert leading spaces → Shift+Tab count.
 TAB_SIZE = 4
 
-kode_turtle = """from turtle import (
-    Terminator,
-    bgcolor,
-    circle,
-    color,
-    done,
-    fd,
-    hideturtle,
-    lt,
-    right,
-    rt,
-    setpos,
-    speed,
-    tracer,
-)
-import tkinter
+kode_turtle = """import pygame
+import cv2
+import numpy as np
+import os
+import random
 
-speed(0)
-bgcolor("black")
-setpos(-4, -2)
-color('aqua')
-tracer(3, 0)
-hideturtle()
+pygame.init()
+MAX_WIDTH = 1000
+MAX_HEIGHT = 750
+MAX_POINTS = 600000
+STEP = 1
+CONTRAST = 1.45
+GAMMA = 1.75
+JITTER = 0.45
+BG_COLOR = (248, 246, 240)
+DOT_COLOR = (12, 12, 12)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+IMAGE_PATH = os.path.join(BASE_DIR, "monalisa.jpg")
+# Reveal order: "waterfall" = top-to-bottom (y then x); "shuffle" = random
+FILL_MODE = "shuffle"
 
-try:
-    for i in range(500):
-        rt(i)
-        circle(150, i)
-        fd(70)
-        right(210)
-        fd(i)
-        lt(1)
+def load_and_prepare_image(path):
+    img = cv2.imread(path) if os.path.exists(path) else None
+    if img is None:
+        w, h = MAX_WIDTH, MAX_HEIGHT
+        canvas = np.full((h, w), 200, dtype=np.uint8)
+        cv2.putText(
+            canvas,
+            "MONALISA",
+            (w // 2 - 200, h // 2),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            2,
+            (255, 255, 255),
+            3,
+        )
+        return canvas, w, h
 
-    done()
-except (Terminator, tkinter.TclError):
-    pass
+    ih, iw = img.shape[:2]
+    scale = min(MAX_WIDTH / iw, MAX_HEIGHT / ih)
+    nw = max(1, int(round(iw * scale)))
+    nh = max(1, int(round(ih * scale)))
+    resized = cv2.resize(img, (nw, nh), interpolation=cv2.INTER_AREA)
+    gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+    return gray, nw, nh
+
+def prepare_darkness_map(gray):
+    g = gray.astype(np.float32) / 255.0
+    g = np.clip((g - 0.5) * CONTRAST + 0.5, 0.0, 1.0)
+    darkness = np.power(1.0 - g, GAMMA)
+    return darkness
+
+gray_img, W, H = load_and_prepare_image(IMAGE_PATH)
+screen = pygame.display.set_mode((W, H))
+pygame.display.set_caption("Monalisa - Stippling Particle Art")
+clock = pygame.time.Clock()
+
+darkness = prepare_darkness_map(gray_img)
+
+points = []
+print("Generating stippling points...")
+h, w = gray_img.shape
+for y in range(0, h, STEP):
+    for x in range(0, w, STEP):
+        if random.random() < float(darkness[y, x]):
+            points.append(
+                (
+                    x + random.uniform(-JITTER, JITTER),
+                    y + random.uniform(-JITTER, JITTER),
+                )
+            )
+
+if len(points) > MAX_POINTS:
+    random.shuffle(points)
+    points = points[:MAX_POINTS]
+
+if FILL_MODE == "waterfall":
+    points.sort(key=lambda p: (p[1], p[0]))
+else:
+    random.shuffle(points)
+
+print(f"Ready: {len(points)} points (step={STEP}, gamma={GAMMA}, contrast={CONTRAST}, size={W}x{H})")
+
+current_count = 0
+batch_size = 1000
+running = True
+
+while running:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                running = False
+            elif event.key == pygame.K_r:
+                current_count = 0
+
+    screen.fill(BG_COLOR)
+
+    if current_count < len(points):
+        current_count = min(len(points), current_count + batch_size)
+
+    # Draw points (black ink on light paper)
+    for i in range(current_count):
+        pt = points[i]
+        screen.set_at((int(pt[0]), int(pt[1])), DOT_COLOR)
+
+    pygame.display.flip()
+    clock.tick(45)
+
+pygame.quit()
 """
 
 
@@ -125,43 +199,37 @@ def clear_editor_auto_indent(levels: int) -> None:
     time.sleep(WAIT_AFTER_DEDENT)
 
 
-def type_lines(source: str, per_char: bool, pause: float) -> None:
-    """Paste whole source lines with original leading spaces (no lstrip).
+def type_lines(source: str, per_char: bool, pause: float, chunk_size: int = 32) -> None:
+    import textwrap
 
-    Prefer line paste of the exact source. After each Enter, Shift+Tab outdent N times
-    (N matches expected auto-indent from the previous line / next line) before the
-    next paste so VS Code cannot re-indent on top of source spaces.
-    """
-    lines = source.splitlines()
-    for i, baris in enumerate(lines):
-        if i > 0:
-            prev = lines[i - 1]
-            prev_lv = leading_indent_levels(prev)
-            next_lv = leading_indent_levels(baris)
-            # Same level as prev, or +1 when prev opens a block (trailing ':').
-            guess = prev_lv + (1 if prev.rstrip().endswith(":") else 0)
-            clear_editor_auto_indent(max(guess, next_lv))
+    clean_source = textwrap.dedent(source).lstrip("\n")
+    for baris in clean_source.splitlines():
+        raw_lstrip = baris.lstrip(" ")
+        is_top_level = len(baris) == len(raw_lstrip)
+        teks = raw_lstrip
 
-        # Special-case match uses stripped text; paste still uses exact `baris`.
-        if baris.lstrip(" \t") == "done()":
+        if teks == "done()":
             pyautogui.press("backspace")
 
-        if baris:
-            if per_char:
-                # Exact characters including leading spaces (no stripped teks).
-                for ch in baris:
-                    paste_text(ch, click=True)
-                    time.sleep(pause)
-            else:
-                # Line-paste: clipboard keeps original spaces; one click after Enter.
-                paste_text(baris, click=False)
-                time.sleep(pause)
+        if is_top_level:
+            pyautogui.press("home")
 
-        pyautogui.press("esc")
-        pyautogui.press("enter")
-        if not per_char:
+        if teks:
+            if per_char:
+                step = max(1, chunk_size)
+                for i in range(0, len(teks), step):
+                    pyperclip.copy(teks[i : i + step])
+                    pyautogui.hotkey("ctrl", "v")
+                    if pause > 0:
+                        time.sleep(pause)
+            else:
+                pyperclip.copy(teks)
+                pyautogui.hotkey("ctrl", "v")
+                if pause > 0:
+                    time.sleep(pause)
             play()
 
+        pyautogui.press("enter")
 
 def type_command(command: str, per_char: bool, pause: float) -> None:
     """Type a shell command into the already-focused terminal. Never used for Save As."""
@@ -227,22 +295,25 @@ def main() -> int:
     parser.add_argument(
         "--per-char",
         action="store_true",
-        help="Paste one character at a time instead of whole lines (slower).",
+        help="Paste characters incrementally instead of whole lines.",
+    )
+    parser.add_argument(
+        "--chunk",
+        type=int,
+        default=32,
+        help="Characters pasted per step in --per-char mode (larger = faster).",
     )
     parser.add_argument(
         "--pause",
         type=float,
         default=None,
-        help=(
-            "Sleep seconds after each paste. "
-            "Default 0.05 with --per-char, else 0.12 (line mode)."
-        ),
+        help="Sleep seconds after each paste (default 0).",
     )
     parser.add_argument(
         "--countdown",
         type=float,
-        default=3.0,
-        help="Seconds to switch focus to the editor tab that will receive code (default 3).",
+        default=5.0,
+        help="Seconds to switch focus to the editor tab that will receive code (default 5.0).",
     )
     parser.add_argument(
         "--no-run",
@@ -260,8 +331,7 @@ def main() -> int:
     args = parser.parse_args()
     if args.pause is None:
         # Early slower per-char cadence (~0.05); line mode stays moderate.
-        args.pause = 0.05 if args.per_char else 0.12
-
+        args.pause = 0.0
     try:
         prepare()
     except Exception:

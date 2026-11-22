@@ -23,7 +23,7 @@ DOT_COLOR = (12, 12, 12)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 IMAGE_PATH = os.path.join(BASE_DIR, "assets", "monalisa.jpg")
 # Reveal order: "waterfall" = top-to-bottom (y then x); "shuffle" = random
-FILL_MODE = "waterfall"
+FILL_MODE = "shuffle"
 
 
 def load_and_prepare_image(path):
@@ -94,7 +94,7 @@ else:
 print(f"Ready: {len(points)} points (step={STEP}, gamma={GAMMA}, contrast={CONTRAST}, size={W}x{H})")
 
 current_count = 0
-batch_size = 2500
+batch_size = 1000
 running = True
 
 while running:
@@ -118,6 +118,6 @@ while running:
         screen.set_at((int(pt[0]), int(pt[1])), DOT_COLOR)
 
     pygame.display.flip()
-    clock.tick(60)
+    clock.tick(45)
 
 pygame.quit()

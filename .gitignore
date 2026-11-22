@@ -13,6 +13,7 @@ dataset_aug/
 *.glb
 *.usdz
 *.gltf
+*.npz
 *.rar
 *.zip
 web/hologram/textures/
@@ -26,6 +27,7 @@ web/airbus/
 web/deagle/
 *.log
 *.mp4
+*.gif
 .vscode/
 *.lnk
 *.lnk.not-startup
@@ -37,9 +39,12 @@ animation/assets/*.gif
 animation/*backup*
 animation/* backup.py
 tools/animasi.py
+tools/tools/
+tools/monalisa.jpg
 # Local dumps / weights / CCTV artifacts
 struktur_folder.txt
 yolov8*.pt
 *.pt
 cctv/speed_log.csv
 cctv/*.csv
+ASMAMIR_*

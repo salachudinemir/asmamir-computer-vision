@@ -1,8 +1,10 @@
 """
 Standalone pygame Realistic Living Koi Pond.
 
-RealisticKoi (32-segment spine, fins, barbels, soft 3D shadow) on a
-procedural pond bed (depth gradient + stones) with caustics and swaying
+RealisticKoi (32-segment spine, smooth polygon silhouette with blunt head,
+clipped kohaku/sanke/showa/tancho/asagi/ogon patterns, scales, soft 3D
+shading, fan pectorals, flexible twin-lobed tail, barbels, blurred shadow)
+on a procedural pond bed (depth gradient + stones) with caustics and swaying
 lily/lotus. Left click: ripples + feed pellets + attract. Right click:
 wider double ripples, no feed. Esc quits.
 
@@ -61,7 +63,35 @@ def create_pond_bed():
     return bed
 
 
+SS = 2  # supersampling: ikan digambar 2x lebih besar lalu diperkecil -> tepi halus
+
+RED = (210, 44, 22)
+RED2 = (224, 66, 28)
+RED3 = (198, 36, 20)
+SUMI = (18, 18, 22)
+SHIRO = (246, 243, 235)
+
+KOI_STYLES = {
+    "kohaku": dict(base=SHIRO, fin=(250, 247, 242), fin_base=(250, 247, 242), ray=(255, 255, 255),
+                   scale=(90, 70, 60, 26), hl=55, dorsal=(252, 250, 246)),
+    "tancho": dict(base=SHIRO, fin=(250, 247, 242), fin_base=(250, 247, 242), ray=(255, 255, 255),
+                   scale=(90, 80, 70, 24), hl=55, dorsal=(252, 250, 246)),
+    "sanke": dict(base=SHIRO, fin=(250, 247, 242), fin_base=(236, 232, 226), ray=(60, 60, 66),
+                  scale=(90, 70, 60, 26), hl=55, dorsal=(252, 250, 246)),
+    "showa": dict(base=(22, 22, 26), fin=(246, 242, 236), fin_base=(24, 24, 28), ray=(255, 255, 255),
+                  scale=(255, 255, 255, 16), hl=42, dorsal=(40, 40, 46)),
+    "ogon": dict(base=(230, 172, 44), fin=(242, 202, 98), fin_base=(234, 178, 56), ray=(255, 236, 170),
+                 scale=(255, 246, 200, 60), hl=95, dorsal=(244, 198, 82)),
+    "asagi": dict(base=(108, 132, 158), fin=(238, 228, 216), fin_base=(222, 100, 52), ray=(255, 240, 225),
+                  scale=(26, 40, 66, 125), hl=38, dorsal=(150, 166, 184)),
+}
+
+
 class RealisticKoi:
+    """Koi dengan siluet poligon halus, corak ter-clip ke tubuh, sisik, shading & sirip lentur."""
+
+    MAX_HALF_W = 21.5  # setengah lebar tubuh maksimum (px pada scale 1)
+
     def __init__(self, x, y, angle, base_speed, scale, variety):
         self.x = x
         self.y = y
@@ -70,6 +100,7 @@ class RealisticKoi:
         self.speed = base_speed
         self.scale = scale
         self.variety = variety
+        self.style = KOI_STYLES[variety]
 
         self.phase = random.uniform(0, 6.28)
         self.turn_vel = 0.0
@@ -83,30 +114,62 @@ class RealisticKoi:
             for i in range(self.num_joints)
         ]
 
-        # Pre-render corak acak organik untuk masing-masing ikan agar tidak berubah-ubah
-        self.spots = self._generate_organic_spots()
+        # Corak (blob dalam koordinat tubuh: t sepanjang badan, s lateral) - tetap per ikan
+        self.blobs = self._generate_pattern()
 
-    def _generate_organic_spots(self):
-        rng = random.Random(hash((self.variety, round(self.scale, 2), round(self.phase, 2))))
-        spots = []
-        if self.variety in ("kohaku", "sanke", "showa"):
+    # ------------------------------------------------------------------ corak
+    def _generate_pattern(self):
+        rng = random.Random(f"{self.variety}-{self.x}-{self.y}-{self.scale}")
+        ts = self.MAX_HALF_W / ((self.num_joints - 1) * 4.6)  # konversi satuan lebar -> t
+        blobs = []
+
+        def patch(t0, s0, r, col, n):
+            for _ in range(n):
+                a = rng.uniform(0, 2 * math.pi)
+                d = math.sqrt(rng.random()) * r * 0.75
+                blobs.append((t0 + math.cos(a) * d * ts, s0 + math.sin(a) * d, r * rng.uniform(0.38, 0.62), col))
+
+        def kohaku_hi():
+            if rng.random() < 0.85:
+                patch(0.11, rng.uniform(-0.1, 0.1), 0.6, RED, 7)
+            t = rng.uniform(0.3, 0.36)
+            while t < 0.86:
+                patch(t, rng.uniform(-0.35, 0.35), rng.uniform(0.7, 0.95), rng.choice((RED, RED2, RED3)),
+                      rng.randint(6, 9))
+                t += rng.uniform(0.18, 0.27)
+
+        v = self.variety
+        if v == "kohaku":
+            kohaku_hi()
+        elif v == "tancho":
+            blobs.append((0.095, 0.0, 0.40, RED))
+        elif v == "sanke":
+            kohaku_hi()
             for _ in range(rng.randint(3, 5)):
-                spots.append({
-                    "t_center": rng.uniform(0.08, 0.78),
-                    "t_radius": rng.uniform(0.08, 0.16),
-                    "side_offset": rng.uniform(-0.35, 0.35),
-                    "color": (228, 62, 22) if rng.random() > 0.3 else (242, 85, 28),
-                })
-        if self.variety in ("sanke", "showa"):
-            for _ in range(rng.randint(3, 6)):
-                spots.append({
-                    "t_center": rng.uniform(0.15, 0.82),
-                    "t_radius": rng.uniform(0.04, 0.09),
-                    "side_offset": rng.uniform(-0.45, 0.45),
-                    "color": (24, 26, 32),
-                })
-        return spots
+                patch(rng.uniform(0.25, 0.85), rng.uniform(-0.55, 0.55), rng.uniform(0.22, 0.36), SUMI, 3)
+        elif v == "showa":
+            patch(0.1, rng.uniform(-0.2, 0.2), 0.62, RED, 6)
+            t = rng.uniform(0.3, 0.36)
+            while t < 0.82:
+                patch(t, rng.uniform(-0.4, 0.4), rng.uniform(0.7, 0.9), rng.choice((RED, RED2)), 7)
+                t += rng.uniform(0.2, 0.28)
+            for _ in range(rng.randint(2, 3)):
+                patch(rng.uniform(0.25, 0.8), rng.uniform(-0.5, 0.5), rng.uniform(0.45, 0.6), SHIRO, 5)
+            patch(0.06, rng.choice((-0.35, 0.35)), 0.3, SUMI, 3)  # menware (sumi di kepala)
+            for _ in range(rng.randint(2, 3)):
+                patch(rng.uniform(0.3, 0.8), rng.uniform(-0.6, 0.6), rng.uniform(0.25, 0.4), SUMI, 3)
+        elif v == "asagi":
+            patch(0.06, 0.0, 0.55, (198, 208, 212), 4)
+            t = 0.1
+            while t < 0.95:
+                for side in (-1, 1):
+                    blobs.append((t, side * (self._width(t) + 0.12), rng.uniform(0.38, 0.55), RED2))
+                t += 0.05
+            for side in (-1, 1):
+                blobs.append((0.05, side * 0.72, 0.28, RED2))
+        return blobs
 
+    # -------------------------------------------------------------- perilaku
     def attract_to(self, tx, ty):
         """Ikan tertarik mendekati titik klik (seperti diberi pakan)."""
         desired = math.atan2(ty - self.y, tx - self.x)
@@ -150,174 +213,263 @@ class RealisticKoi:
         self.y += math.sin(self.angle) * self.speed * dt
         self.phase += (self.speed * 0.075 + 2.2) * dt
 
-        # Update ruas tulang belakang (Inverse Kinematics / Chain Following)
+        # Update ruas tulang belakang (Chain Following) + gelombang renang ke arah ekor
         self.joints[0] = [self.x, self.y]
         for i in range(1, self.num_joints):
             t = i / (self.num_joints - 1)
             px, py = self.joints[i - 1]
             cx, cy = self.joints[i]
-
-            # Arah dari ruas sekarang ke ruas depannya
             ang = math.atan2(py - cy, px - cx)
-
-            # Tambahkan gelombang kibasan berenang yang membesar ke ekor
-            swim_wave = math.sin(self.phase - t * 5.2) * (0.14 * (t ** 1.35))
+            swim_wave = math.sin(self.phase - t * 5.2) * (0.12 * (t ** 1.5))
             target_ang = ang + swim_wave
-
             self.joints[i][0] = px - math.cos(target_ang) * self.joint_dist
             self.joints[i][1] = py - math.sin(target_ang) * self.joint_dist
 
-    def _body_radius(self, t):
-        """Profil ketebalan tubuh ikan koi yang realistis dari moncong ke pangkal ekor."""
-        if t < 0.26:
-            return (0.28 + 0.72 * math.sin((t / 0.26) * (math.pi / 2))) * 22.0 * self.scale
-        else:
-            u = (t - 0.26) / 0.74
-            return (math.cos(u * (math.pi / 2)) ** 0.85) * 22.0 * self.scale
+    # ---------------------------------------------------------------- bentuk
+    @staticmethod
+    def _width(t):
+        """Profil setengah-lebar (0..1) tampak atas: kepala tumpul, bahu lebar, pangkal ekor ramping."""
+        if t < 0.27:
+            u = t / 0.27
+            return 0.58 + 0.42 * (math.sin(u * math.pi / 2) ** 0.8)
+        u = (t - 0.27) / 0.73
+        return 0.19 + 0.81 * (math.cos(u * math.pi / 2) ** 1.2)
 
+    # ----------------------------------------------------------------- gambar
     def draw(self, surf):
-        # Hitung sudut masing-masing ruas
-        angles = []
-        for i in range(self.num_joints):
-            if i == 0:
-                ang = self.angle
-            else:
-                dx = self.joints[i - 1][0] - self.joints[i][0]
-                dy = self.joints[i - 1][1] - self.joints[i][1]
-                ang = math.atan2(dy, dx)
-            angles.append(ang)
+        N = self.num_joints
+        st = self.style
+        A = [self.angle]
+        for i in range(1, N):
+            dx = self.joints[i - 1][0] - self.joints[i][0]
+            dy = self.joints[i - 1][1] - self.joints[i][1]
+            A.append(math.atan2(dy, dx))
 
-        # Tentukan bounding box lokal agar menggambar alpha sangat cepat (60 FPS)
         xs = [p[0] for p in self.joints]
         ys = [p[1] for p in self.joints]
-        pad = int(75 * self.scale)
-        min_x = max(0, int(min(xs)) - pad)
-        min_y = max(0, int(min(ys)) - pad)
-        max_x = min(W, int(max(xs)) + pad + 35)
-        max_y = min(H, int(max(ys)) + pad + 35)
-        bw, bh = max_x - min_x, max_y - min_y
-        if bw <= 0 or bh <= 0:
+        pad = int(78 * self.scale)
+        sh_off = (16 * self.scale, 22 * self.scale)
+        min_x = int(min(xs)) - pad
+        min_y = int(min(ys)) - pad
+        bw = int(max(xs)) + pad + int(sh_off[0]) + 4 - min_x
+        bh = int(max(ys)) + pad + int(sh_off[1]) + 4 - min_y
+        if min_x > W or min_y > H or min_x + bw < 0 or min_y + bh < 0:
             return
 
-        local_surf = pygame.Surface((bw, bh), pygame.SRCALPHA)
+        S = SS
+        K = self.scale * S
+        MW = self.MAX_HALF_W * K
+        size = (bw * S, bh * S)
+        P = [((x - min_x) * S, (y - min_y) * S) for x, y in self.joints]
 
-        def to_loc(px, py):
-            return px - min_x, py - min_y
+        def spine(t):
+            f = min(max(t, 0.0), 1.0) * (N - 1)
+            i = min(int(f), N - 2)
+            u = f - i
+            a0 = A[i]
+            da = (A[i + 1] - a0 + math.pi) % (2 * math.pi) - math.pi
+            return (P[i][0] + (P[i + 1][0] - P[i][0]) * u,
+                    P[i][1] + (P[i + 1][1] - P[i][1]) * u,
+                    a0 + da * u)
 
-        # 1. Bayangan lembut ikan di dasar kolam (memberi ilusi 3D melayang di dalam air)
-        for i in range(self.num_joints):
-            t = i / (self.num_joints - 1)
-            r = int(self._body_radius(t) * 0.95)
-            if r > 1:
-                lx, ly = to_loc(self.joints[i][0] + 24, self.joints[i][1] + 30)
-                pygame.draw.circle(local_surf, (2, 10, 14, 48), (int(lx), int(ly)), r)
+        def at(t, s):
+            x, y, a = spine(t)
+            return x - math.sin(a) * s, y + math.cos(a) * s
 
-        # 2. Sungut khas ikan koi (Barbels) di ujung kepala
-        hx, hy = to_loc(*self.joints[0])
-        hang = angles[0]
+        def outline(f=1.0, ox=0.0, oy=0.0):
+            left, right = [], []
+            for i in range(N):
+                x, y = P[i]
+                a = A[i]
+                w = self._width(i / (N - 1)) * MW * f
+                nx, ny = -math.sin(a), math.cos(a)
+                left.append((x + nx * w + ox, y + ny * w + oy))
+                right.append((x - nx * w + ox, y - ny * w + oy))
+            x0, y0 = P[0]
+            fx, fy = math.cos(A[0]), math.sin(A[0])
+            nx, ny = -fy, fx
+            w0 = self._width(0.0) * MW * f
+            cap = []
+            for k in range(1, 14):
+                th = -math.pi / 2 + math.pi * k / 14
+                cap.append((x0 + fx * math.cos(th) * w0 * 1.08 + nx * math.sin(th) * w0 + ox,
+                            y0 + fy * math.cos(th) * w0 * 1.08 + ny * math.sin(th) * w0 + oy))
+            return left + right[::-1] + cap
+
+        # ---- 1. Sirip-sirip (digambar di bawah tubuh)
+        fins = pygame.Surface(size, pygame.SRCALPHA)
+        fin_polys = []
+
+        def fan(base_t, side, length, direction, spread, a_out=105, a_in=175):
+            bx, by = at(base_t, side * self._width(base_t) * MW * 0.72)
+            arc, inner = [], []
+            n = 10
+            for j in range(n + 1):
+                u = j / n
+                ang = direction + side * (-0.5 + u) * spread
+                ln = length * (0.62 + 0.38 * math.sin(math.pi * (0.15 + 0.85 * u)))
+                arc.append((bx + math.cos(ang) * ln, by + math.sin(ang) * ln))
+                inner.append((bx + math.cos(ang) * ln * 0.42, by + math.sin(ang) * ln * 0.42))
+            poly = [(bx, by)] + arc
+            pygame.draw.polygon(fins, (*st["fin"], a_out), poly)
+            pygame.draw.polygon(fins, (*st["fin_base"], a_in), [(bx, by)] + inner)
+            for pt in arc[::2]:
+                pygame.draw.line(fins, (*st["ray"], 120), (bx, by), pt, max(1, int(0.5 * K)))
+            fin_polys.append(poly)
+
+        # Sungut (barbels) - menonjol sedikit di depan mulut
+        x0, y0 = P[0]
+        a0 = A[0]
+        w0 = self._width(0.0) * MW
         for side in (-1, 1):
-            b_ang = hang + side * 0.55 + math.sin(self.phase) * 0.08
-            bx1 = hx + math.cos(hang + side * 0.35) * 4 * self.scale
-            by1 = hy + math.sin(hang + side * 0.35) * 4 * self.scale
-            bx2 = bx1 + math.cos(b_ang) * 12 * self.scale
-            by2 = by1 + math.sin(b_ang) * 12 * self.scale
-            pygame.draw.line(local_surf, (235, 225, 215, 190), (bx1, by1), (bx2, by2), max(1, int(1.6 * self.scale)))
+            th = side * 0.8
+            bx = x0 + math.cos(a0) * math.cos(th) * w0 - math.sin(a0) * math.sin(th) * w0
+            by = y0 + math.sin(a0) * math.cos(th) * w0 + math.cos(a0) * math.sin(th) * w0
+            wig = math.sin(self.phase * 1.3 + side) * 0.15
+            a1 = a0 + side * (0.75 + wig)
+            mx, my = bx + math.cos(a1) * 6 * K, by + math.sin(a1) * 6 * K
+            a2 = a1 + side * 0.35
+            ex, ey = mx + math.cos(a2) * 5 * K, my + math.sin(a2) * 5 * K
+            pygame.draw.lines(fins, (226, 214, 196, 215), False, [(bx, by), (mx, my), (ex, ey)],
+                              max(1, int(1.2 * K)))
 
-        # 3. Sirip Pektoral (kiri & kanan) transparan dengan serat halus
-        px_base, py_base = to_loc(*self.joints[5])
-        pang = angles[5]
-        flap = math.sin(self.phase * 0.85) * 0.26
+        # Sirip dada (pectoral) besar membulat & sirip perut (pelvic)
         for side in (-1, 1):
-            f_ang = pang + side * (1.12 + flap)
-            p1 = (px_base, py_base)
-            p2 = (
-                px_base + math.cos(f_ang - 0.28 * side) * 38 * self.scale,
-                py_base + math.sin(f_ang - 0.28 * side) * 38 * self.scale,
-            )
-            p3 = (
-                px_base + math.cos(f_ang + 0.12 * side) * 42 * self.scale,
-                py_base + math.sin(f_ang + 0.12 * side) * 42 * self.scale,
-            )
-            p4 = (
-                px_base + math.cos(f_ang + 0.42 * side) * 26 * self.scale,
-                py_base + math.sin(f_ang + 0.42 * side) * 26 * self.scale,
-            )
-            pygame.draw.polygon(local_surf, (245, 248, 252, 115), [p1, p2, p3, p4])
-            for ray_pt in (p2, p3, p4):
-                pygame.draw.line(local_surf, (255, 255, 255, 145), p1, ray_pt, 1)
+            a_p = spine(0.2)[2]
+            flap = math.sin(self.phase * 0.9 + side * 0.5) * 0.24
+            fan(0.2, side, 40 * K * (0.9 + 0.1 * math.cos(self.phase * 0.9)),
+                a_p + side * (math.pi / 2 + 0.6 + flap), 0.95)
+            a_v = spine(0.52)[2]
+            fan(0.52, side, 21 * K, a_v + side * (math.pi / 2 + 0.85 + flap * 0.5), 0.8)
 
-        # 4. Sirip Ekor (Caudal Fin) melengkung organik dan transparan
-        tx, ty = to_loc(*self.joints[-1])
-        tang = angles[-1] + math.pi
-        tail_poly = [(tx, ty)]
-        num_rays = 11
-        for k in range(num_rays):
-            u = (k / (num_rays - 1)) * 2.0 - 1.0
-            spread = u * 0.62
-            fork = 1.0 - 0.18 * math.exp(-(u * 3.0) ** 2)
-            length = (46.0 * fork * (1.0 - 0.18 * (u ** 2))) * self.scale
-            wave_tail = math.sin(self.phase - 5.5 + u * 0.8) * 0.18
-            ang = tang + spread + wave_tail
-            tail_poly.append((tx + math.cos(ang) * length, ty + math.sin(ang) * length))
+        # Sirip ekor (caudal) dua lobus, melentur mengikuti kibasan
+        xe, ye = P[-1]
+        ae = A[-1]
+        back = ae + math.pi
+        swing = math.sin(self.phase - 5.9) * 0.34
+        TL = 58 * K
+        pw = self._width(1.0) * MW
+        nx, ny = -math.sin(ae), math.cos(ae)
+        tips, inner, rays = [], [], []
+        M = 19
+        for j in range(M):
+            u = j / (M - 1) * 2 - 1
+            au = abs(u)
+            ln = TL * (0.52 + 0.48 * au ** 0.85) * (1.0 - 0.4 * max(0.0, au - 0.82) / 0.18)
+            ang1 = back + u * 0.5 + swing * 0.55
+            ang2 = back + u * 0.66 + swing * (1.0 + 0.5 * au)
+            mx, my = xe + math.cos(ang1) * ln * 0.45, ye + math.sin(ang1) * ln * 0.45
+            tx, ty = mx + math.cos(ang2) * ln * 0.55, my + math.sin(ang2) * ln * 0.55
+            tips.append((tx, ty))
+            inner.append((xe + math.cos(ang1) * ln * 0.5, ye + math.sin(ang1) * ln * 0.5))
+            rays.append(((mx, my), (tx, ty)))
+        lp = (xe + nx * pw, ye + ny * pw)
+        rp = (xe - nx * pw, ye - ny * pw)
+        tail_poly = [lp] + tips + [rp]
+        pygame.draw.polygon(fins, (*st["fin"], 100), tail_poly)
+        pygame.draw.polygon(fins, (*st["fin_base"], 165), [lp] + inner + [rp])
+        for (mx, my), (tx, ty) in rays[::2]:
+            pygame.draw.lines(fins, (*st["ray"], 115), False, [(xe, ye), (mx, my), (tx, ty)], max(1, int(0.5 * K)))
+        fin_polys.append(tail_poly)
 
-        pygame.draw.polygon(local_surf, (248, 246, 242, 135), tail_poly)
-        for pt in tail_poly[1::2]:
-            pygame.draw.line(local_surf, (255, 255, 255, 160), (tx, ty), pt, 1)
+        # ---- 2. Tubuh: warna dasar + corak, nanti di-clip dengan mask siluet
+        # Lapisan tubuh cukup seukuran bounding box tubuh (jauh lebih kecil = lebih cepat)
+        body_pts_fin = outline()
+        bx0 = int(min(x for x, _ in body_pts_fin)) - 2
+        by0 = int(min(y for _, y in body_pts_fin)) - 2
+        size = (int(max(x for x, _ in body_pts_fin)) + 3 - bx0, int(max(y for _, y in body_pts_fin)) + 3 - by0)
+        P[:] = [(x - bx0, y - by0) for x, y in P]  # spine()/at()/outline() kini dalam koordinat tubuh
+        body_pts = outline()
+        body = pygame.Surface(size, pygame.SRCALPHA)
+        body.fill((*st["base"], 255))
+        for t, s, r, col in self.blobs:
+            pygame.draw.circle(body, col, at(t, s * MW), r * MW)
 
-        # 5. Tubuh Utama (dari ekor ke kepala agar tumpukan mulus)
-        base_col = (242, 242, 245) if self.variety != "ogon" else (245, 195, 45)
-        edge_col = (195, 200, 210) if self.variety != "ogon" else (190, 140, 20)
+        # Sisik + sirip punggung (overlay transparan)
+        ov = pygame.Surface(size, pygame.SRCALPHA)
+        sc_r = 3.1 * K
+        body_len = (N - 1) * self.joint_dist * S
+        dt_row = sc_r * 1.45 / body_len
+        lw = max(1, int((0.9 if self.variety == "asagi" else 0.5) * K))
+        t = 0.17
+        row = 0
+        while t < 0.93:
+            x_c, y_c, a = spine(t)
+            w = self._width(t) * MW * 0.9
+            step = sc_r * 1.55
+            s = -w + (step * 0.5 if row % 2 else 0.0)
+            th = -(a + math.pi)
+            while s <= w:
+                cx = x_c - math.sin(a) * s
+                cy = y_c + math.cos(a) * s
+                pygame.draw.arc(ov, st["scale"], (cx - sc_r, cy - sc_r, 2 * sc_r, 2 * sc_r),
+                                th - 1.15, th + 1.15, lw)
+                s += step
+            t += dt_row
+            row += 1
 
-        for i in range(self.num_joints - 1, -1, -1):
-            t = i / (self.num_joints - 1)
-            lx, ly = to_loc(*self.joints[i])
-            ang = angles[i]
-            r = max(1, int(self._body_radius(t)))
+        dl, dr = [], []
+        for j in range(13):
+            u = j / 12
+            t = 0.3 + 0.36 * u
+            x_c, y_c, a = spine(t)
+            sway = math.sin(self.phase - t * 5.0 - 0.9) * 3.2 * K * u
+            thick = (0.4 + 1.6 * math.sin(math.pi * u) ** 0.7) * K
+            nx_, ny_ = -math.sin(a), math.cos(a)
+            dl.append((x_c + nx_ * (sway + thick), y_c + ny_ * (sway + thick)))
+            dr.append((x_c + nx_ * (sway - thick), y_c + ny_ * (sway - thick)))
+        pygame.draw.polygon(ov, (*st["dorsal"], 150), dl + dr[::-1])
+        pygame.draw.lines(ov, (255, 255, 255, 90), False, dl, max(1, int(0.6 * K)))
+        body.blit(ov, (0, 0))
 
-            pygame.draw.circle(local_surf, edge_col, (int(lx), int(ly)), r)
-            if r > 2:
-                pygame.draw.circle(local_surf, base_col, (int(lx - 1), int(ly - 1)), int(r * 0.88))
+        # Shading 3D lembut (digambar resolusi rendah lalu diperbesar = blur murah)
+        q = 4
+        small = (size[0] // q + 1, size[1] // q + 1)
 
-            for spot in self.spots:
-                dist_t = abs(t - spot["t_center"])
-                if dist_t < spot["t_radius"]:
-                    factor = math.cos((dist_t / spot["t_radius"]) * (math.pi / 2))
-                    sr = int(r * 0.86 * factor)
-                    if sr > 1:
-                        perp_ang = ang + math.pi / 2
-                        sx = lx + math.cos(perp_ang) * (r * spot["side_offset"])
-                        sy = ly + math.sin(perp_ang) * (r * spot["side_offset"])
-                        pygame.draw.circle(local_surf, spot["color"], (int(sx), int(sy)), sr)
+        def scaled(pts):
+            return [(x / q, y / q) for x, y in pts]
 
-            if r > 4 and 0.08 < t < 0.72:
-                pygame.draw.circle(local_surf, (255, 255, 255, 95), (int(lx - 2), int(ly - 2)), int(r * 0.42))
+        dark = pygame.Surface(small, pygame.SRCALPHA)
+        dark.fill((0, 0, 0, 0))
+        pygame.draw.polygon(dark, (0, 0, 0, 110), scaled(body_pts))
+        pygame.draw.polygon(dark, (0, 0, 0, 40), scaled(outline(0.78, -1.5 * K, -1.5 * K)))
+        pygame.draw.polygon(dark, (0, 0, 0, 0), scaled(outline(0.52, -1.5 * K, -1.5 * K)))
+        hl = pygame.Surface(small, pygame.SRCALPHA)
+        hl.fill((255, 255, 255, 0))
+        pygame.draw.polygon(hl, (255, 255, 255, st["hl"]), scaled(outline(0.3, -2.0 * K, -2.0 * K)))
+        body.blit(pygame.transform.smoothscale(dark, size), (0, 0))
+        body.blit(pygame.transform.smoothscale(hl, size), (0, 0))
 
-        # 6. Sirip Punggung (Dorsal Fin)
-        dorsal_pts = []
-        for i in range(8, 22):
-            t = i / (self.num_joints - 1)
-            lx, ly = to_loc(*self.joints[i])
-            ang = angles[i]
-            wave_d = math.sin(self.phase - t * 5.0) * 4.5 * self.scale
-            dx = lx + math.cos(ang + math.pi / 2) * wave_d
-            dy = ly + math.sin(ang + math.pi / 2) * wave_d
-            dorsal_pts.append((dx, dy))
-        if len(dorsal_pts) >= 2:
-            pygame.draw.lines(local_surf, (255, 255, 255, 165), False, dorsal_pts, max(2, int(3.2 * self.scale)))
-
-        # 7. Sepasang Mata dengan kilau pupil
-        ex_base, ey_base = to_loc(*self.joints[2])
-        eang = angles[2]
+        # Mata di sisi kepala + lubang hidung
         for side in (-1, 1):
-            perp = eang + side * 1.48
-            ex = ex_base + math.cos(perp) * 11.5 * self.scale
-            ey = ey_base + math.sin(perp) * 11.5 * self.scale
-            er = max(2, int(2.8 * self.scale))
-            pygame.draw.circle(local_surf, (220, 215, 200), (int(ex), int(ey)), er + 1)
-            pygame.draw.circle(local_surf, (12, 14, 18), (int(ex), int(ey)), er)
-            pygame.draw.circle(local_surf, (255, 255, 255), (int(ex - 1), int(ey - 1)), 1)
+            ex, ey = at(0.075, side * 0.66 * MW)
+            er = 2.5 * K
+            pygame.draw.circle(body, (196, 176, 130), (ex, ey), er + 0.9 * K)
+            pygame.draw.circle(body, (10, 10, 14), (ex, ey), er)
+            pygame.draw.circle(body, (255, 255, 255), (ex - 0.8 * K, ey - 0.8 * K), 0.8 * K)
+            hx, hy = at(0.018, side * 0.3 * MW)
+            pygame.draw.circle(body, (40, 30, 30), (hx, hy), 0.9 * K)
 
-        surf.blit(local_surf, (min_x, min_y))
+        # Clip semua lapisan tubuh ke siluet ikan
+        mask = pygame.Surface(size, pygame.SRCALPHA)
+        mask.fill((255, 255, 255, 0))
+        pygame.draw.polygon(mask, (255, 255, 255, 255), body_pts)
+        body.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+
+        fins.blit(body, (bx0, by0))
+
+        # ---- 3. Bayangan buram di dasar kolam
+        sq = q * S
+        shadow = pygame.Surface((bw // q + 1, bh // q + 1), pygame.SRCALPHA)
+        shadow.fill((2, 10, 14, 0))
+        so = (sh_off[0] * S, sh_off[1] * S)
+        for poly in fin_polys:
+            pygame.draw.polygon(shadow, (2, 10, 14, 40), [((x + so[0]) / sq, (y + so[1]) / sq) for x, y in poly])
+        pygame.draw.polygon(shadow, (2, 10, 14, 80), [((x + so[0]) / sq, (y + so[1]) / sq) for x, y in body_pts_fin])
+        surf.blit(pygame.transform.smoothscale(shadow, (bw, bh)), (min_x, min_y))
+
+        # ---- 4. Turunkan resolusi (anti-alias) & tempel ke layar
+        surf.blit(pygame.transform.smoothscale(fins, (bw, bh)), (min_x, min_y))
 
 
 class Ripple:
@@ -430,10 +582,12 @@ def main():
     pond_bed = create_pond_bed()
 
     kois = [
-        RealisticKoi(420, 310, 0.3, 105, 1.18, "kohaku"),
-        RealisticKoi(740, 450, 3.4, 95, 1.12, "sanke"),
-        RealisticKoi(580, 520, -1.2, 88, 1.00, "showa"),
-        RealisticKoi(320, 500, -0.5, 92, 0.92, "ogon"),
+        RealisticKoi(420, 310, 0.3, 100, 1.18, "kohaku"),
+        RealisticKoi(740, 450, 3.4, 92, 1.12, "sanke"),
+        RealisticKoi(580, 520, -1.2, 86, 1.05, "showa"),
+        RealisticKoi(320, 500, -0.5, 90, 0.95, "ogon"),
+        RealisticKoi(860, 260, 2.2, 84, 1.00, "tancho"),
+        RealisticKoi(640, 200, 1.0, 80, 0.90, "asagi"),
     ]
 
     ripples = []
@@ -480,7 +634,7 @@ def main():
             else:
                 p.draw(screen)
 
-        # Update & gambar semua ikan koi (tetap memakai RealisticKoi)
+        # Update & gambar semua ikan koi
         for k in kois:
             k.update(dt)
             k.draw(screen)

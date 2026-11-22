@@ -53,8 +53,16 @@ SPRITE_MAX_AREA = 185_000
 SPRITE_TARGET_LENGTH = 220.0  # normalize crops before per-fish scaling
 # After canonicalize, every surface faces +X (nose right). Draw uses flip L/R + pitch.
 SPRITE_CANON_HEADING = 0.0  # radians; nose along +X
-SPRITE_CYCLE_LEN = 4  # light swim-pose cycle per fish (stable base + nearby frames)
-SPRITE_CYCLE_RATE = 0.22  # phase → cycle index (slow; avoids tumble)
+SPRITE_CYCLE_LEN = 6  # swim-pose window per fish (stable base + nearby frames)
+SPRITE_CYCLE_RATE = 0.95  # swim phase → frame advance (tied to undulation)
+# Soft visual heading (lerp/slew) so sprite pitch never snap-turns with physics.
+HEADING_SLEW_RATE = 2.6  # rad/s toward physics angle (cruise)
+HEADING_SLEW_FAST = 4.8  # rad/s during burst / call
+# L/R flip only when clearly horizontal; cooldown stops flip-flap near vertical.
+FACE_FLIP_COS = 0.48
+FACE_FLIP_SIN_MAX = 0.52
+FACE_FLIP_COOLDOWN_S = 0.65
+SPINE_BEND_GAIN = 0.32  # mid-spine vs head → extra pitch (subtle body curve)
 
 
 def _try_import_cv2():
@@ -111,8 +119,8 @@ class KoiSpriteBank:
     """Keyed fish crops from the overlay MP4 for blitting onto RealisticKoi.
 
     Every stored surface is canonicalized so the nose faces +X (right). Draw-time
-    code then flips for left swim and applies a small pitch rotation — no full
-    360 tumble from mismatched per-crop headings.
+    code slews visual heading, gates L/R flips (no vertical flip-flap), cycles
+    frames from swim phase, and may add a light spine-bend pitch.
     """
 
     def __init__(
@@ -139,14 +147,23 @@ class KoiSpriteBank:
         self._ok = False
 
     def pick(self, fish_index: int, phase: float) -> tuple[pygame.Surface, float] | None:
-        """Return (surface facing +X, body_length_px) with a stable per-fish cycle."""
+        """Return (surface facing +X, body_length_px) cycled by swim phase.
+
+        Stable per-fish base; ping-pong through a short nearby window so the
+        wrap from last→first does not pop. Phase is RealisticKoi.phase.
+        """
         if not self.available:
             return None
         n = len(self._sprites)
         cycle_len = min(SPRITE_CYCLE_LEN, n)
-        # Stable base per fish; light nearby-frame cycle for swim pose (not bank scramble).
         base = (fish_index * cycle_len) % n
-        step = int(phase * SPRITE_CYCLE_RATE) % cycle_len
+        if cycle_len <= 1:
+            return self._sprites[base % n]
+        # Ping-pong 0..cycle_len-1..0 driven by swim phase.
+        span = cycle_len - 1
+        t = (phase * SPRITE_CYCLE_RATE) % (2.0 * span)
+        step = int(t) if t <= span else int(2.0 * span - t)
+        step = max(0, min(span, step))
         idx = (base + step) % n
         return self._sprites[idx]
 
@@ -503,8 +520,10 @@ class RealisticKoi:
         self.call_target = None
         self.scatter_timer = 0.0
         self.scatter_heading = angle
-        # Sprite L/R facing with hysteresis (avoids flicker when swimming vertical).
+        # Soft draw heading (slewed toward physics angle) + gated L/R facing.
+        self._visual_angle = float(angle)
         self._face_left = math.cos(angle) < 0.0
+        self._face_flip_cd = 0.0
 
         # Follow-the-leader spine (32 joints).
         self.num_joints = 32
@@ -662,8 +681,8 @@ class RealisticKoi:
             self.turn_vel *= 0.96
         else:  # PIVOT
             target_speed = self.base_speed * 0.28
-            self.turn_vel += random.choice((-1, 1)) * 3.4 * dt
-            self.turn_vel = max(-2.8, min(2.8, self.turn_vel))
+            self.turn_vel += random.choice((-1, 1)) * 2.2 * dt
+            self.turn_vel = max(-2.0, min(2.0, self.turn_vel))
 
         self.speed += (target_speed - self.speed) * min(1.0, 3.2 * dt)
 
@@ -682,9 +701,13 @@ class RealisticKoi:
         if steer_x != 0.0 or steer_y != 0.0:
             wall_ang = math.atan2(steer_y, steer_x)
             diff = (wall_ang - self.angle + math.pi) % (2 * math.pi) - math.pi
-            self.angle += diff * 2.2 * dt
+            # Gentler wall steer — visual slew absorbs residual sharpness.
+            self.angle += diff * 1.45 * dt
         else:
-            self.angle += self.turn_vel * dt
+            # Cap turn rate so physics heading itself stays continuous.
+            max_turn = 2.4 if self.state == SwimState.PIVOT else 1.85
+            turn = max(-max_turn, min(max_turn, self.turn_vel))
+            self.angle += turn * dt
 
         self.x += math.cos(self.angle) * self.speed * dt
         self.y += math.sin(self.angle) * self.speed * dt
@@ -692,6 +715,30 @@ class RealisticKoi:
         if self.state == SwimState.BURST:
             wave_rate = self.speed * 0.09 + 3.4
         self.phase += wave_rate * dt
+
+        # Visual heading: slew/lerp toward physics angle (no snap pitch).
+        vdiff = self._norm_pi(self.angle - self._visual_angle)
+        slew = HEADING_SLEW_FAST if (
+            self.state == SwimState.BURST or self.call_timer > 0 or self.scatter_timer > 0
+        ) else HEADING_SLEW_RATE
+        step = slew * dt
+        if abs(vdiff) <= step:
+            self._visual_angle = self.angle
+        else:
+            self._visual_angle += math.copysign(step, vdiff)
+
+        # L/R flip only when mostly horizontal + cooldown (no vertical flip-flap).
+        if self._face_flip_cd > 0.0:
+            self._face_flip_cd = max(0.0, self._face_flip_cd - dt)
+        vc = math.cos(self._visual_angle)
+        vs = abs(math.sin(self._visual_angle))
+        if self._face_flip_cd <= 0.0 and vs <= FACE_FLIP_SIN_MAX:
+            if vc < -FACE_FLIP_COS and not self._face_left:
+                self._face_left = True
+                self._face_flip_cd = FACE_FLIP_COOLDOWN_S
+            elif vc > FACE_FLIP_COS and self._face_left:
+                self._face_left = False
+                self._face_flip_cd = FACE_FLIP_COOLDOWN_S
 
         # Inverse kinematics chain + swim wave, then a light smooth pass.
         self.joints[0] = [self.x, self.y]
@@ -737,6 +784,18 @@ class RealisticKoi:
     def _norm_pi(a: float) -> float:
         return (a + math.pi) % (2 * math.pi) - math.pi
 
+    def _spine_bend(self) -> float:
+        """Extra pitch from mid-spine vs soft visual heading (subtle S-curve)."""
+        i_near = min(3, self.num_joints - 1)
+        i_far = min(14, self.num_joints - 1)
+        dx = self.joints[i_near][0] - self.joints[i_far][0]
+        dy = self.joints[i_near][1] - self.joints[i_far][1]
+        if dx * dx + dy * dy < 1e-4:
+            return 0.0
+        spine = math.atan2(dy, dx)
+        raw = self._norm_pi(spine - self._visual_angle) * SPINE_BEND_GAIN
+        return max(-0.38, min(0.38, raw))
+
     def _draw_sprite(self, surf: pygame.Surface, sprites: KoiSpriteBank) -> bool:
         picked = sprites.pick(self.sprite_index, self.phase)
         if picked is None:
@@ -746,22 +805,17 @@ class RealisticKoi:
         target_len = max(48.0, 147.0 * self.scale)
         zoom = target_len / max(1.0, body_len)
 
-        # Bank surfaces are canonical nose-+X. Prefer stable facing:
-        # flip horizontally when swimming left, then pitch about that axis
-        # (avoids head/tail tumble from mismatched per-frame headings).
-        c = math.cos(self.angle)
-        if c < -0.15:
-            self._face_left = True
-        elif c > 0.15:
-            self._face_left = False
+        # Bank surfaces are canonical nose-+X. Facing is gated in update();
+        # pitch uses slewed visual heading (+ optional spine bend).
         facing_left = self._face_left
         pose = pygame.transform.flip(base, True, False) if facing_left else base
+        bend = self._spine_bend()
         if facing_left:
             # Flip mirrors rotation sense; pitch relative to -X (π).
-            pitch = self._norm_pi(self.angle - math.pi)
+            pitch = self._norm_pi(self._visual_angle - math.pi + bend)
             rot_deg = math.degrees(pitch)
         else:
-            pitch = self._norm_pi(self.angle)
+            pitch = self._norm_pi(self._visual_angle + bend)
             rot_deg = -math.degrees(pitch)
         try:
             img = pygame.transform.rotozoom(pose, rot_deg, zoom)

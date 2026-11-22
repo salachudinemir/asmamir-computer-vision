@@ -2,13 +2,14 @@
 Standalone pygame pixel koi pond.
 
 Dark-navy aquarium with nearest-neighbor pixel koi (Kohaku / Asagi / Yamabuki
-and kin), soft slow swim, lily pads, and pink lotus. Interactive: click/tap
-calls fish, Space scatters, ripples on the surface.
+and kin), slender ~5:1 silhouette with fan pectorals / pelvic fins / forked
+V-tail, soft slow horizontal swim, lily pads, and pink lotus. Interactive:
+click/tap calls fish, Space scatters, ripples on the surface. No HUD.
 
 Look & swim ideas inspired by git-koi-aquarium
-(https://github.com/reginaldalfret/git-koi-aquarium, MIT) — stroke/glide beats,
-variety coats, fish under botanicals, calm spacing — rewritten as original
-pygame code (not a port or wholesale copy).
+(https://github.com/reginaldalfret/git-koi-aquarium, MIT) — silhouette proportions,
+fin layout, variety coats, fish under botanicals — rewritten as original
+pygame code (not a port or wholesale copy of their Go or PNG/GIF assets).
 
 Optional full-pond keyed MP4 overlay (`--overlay` / `O`) still available;
 pixel interactive fish are the default.
@@ -42,10 +43,10 @@ DEFAULT_MP4_PATH = _ASSETS_DIR / "koi_fish_swimming_animated_overlay.mp4"
 OVERLAY_OPACITY = 1.0
 OVERLAY_CACHE_MAX_MB = 700.0
 
-# Pixel atlas: paint at low res, scale with nearest-neighbor.
-PIXEL_SCALE = 4
-PIXEL_BODY_W = 40
-PIXEL_BODY_H = 18
+# Pixel atlas: slender ~5:1 body (git-koi silhouette feel), nearest-neighbor upscale.
+PIXEL_SCALE = 3
+PIXEL_BODY_W = 72
+PIXEL_BODY_H = 36
 SWIM_FRAMES = 6
 HEADING_SLEW = 1.55
 HEADING_SLEW_FAST = 3.2
@@ -54,55 +55,71 @@ FACE_FLIP_SIN_MAX = 0.55
 FACE_FLIP_CD = 0.7
 SEPARATION_RADIUS = 92.0
 SEPARATION_GAIN = 48.0
+HORIZONTAL_BIAS = 0.55
+OUTLINE = (24, 20, 37)
 
-# Palette inspired by classic Japanese morphs (original RGB choices).
+# Palette inspired by classic Japanese morphs (original RGB; ramps echo aquarium coats).
 PALETTES: dict[str, dict[str, tuple[int, int, int]]] = {
     "kohaku": {
         "ground": (244, 246, 250),
-        "edge": (170, 180, 198),
-        "mark": (228, 58, 52),
-        "mark2": (242, 110, 48),
+        "shade": (192, 203, 220),
+        "edge": (90, 105, 136),
+        "mark": (228, 59, 68),
+        "mark2": (240, 96, 79),
         "fin": (236, 240, 248),
-        "eye": (18, 20, 28),
+        "fin_tip": (246, 117, 122),
+        "eye": (24, 20, 37),
     },
     "asagi": {
-        "ground": (78, 108, 148),
-        "edge": (42, 58, 92),
-        "mark": (248, 120, 52),
-        "mark2": (220, 78, 48),
-        "fin": (236, 132, 72),
-        "eye": (16, 18, 26),
+        "ground": (192, 203, 220),
+        "shade": (90, 105, 136),
+        "edge": (38, 43, 68),
+        "mark": (247, 118, 34),
+        "mark2": (254, 174, 52),
+        "fin": (247, 118, 34),
+        "fin_tip": (190, 74, 47),
+        "eye": (24, 20, 37),
+        "dorsal": (58, 68, 102),
+        "net": (38, 43, 68),
     },
     "yamabuki": {
-        "ground": (252, 196, 64),
-        "edge": (196, 118, 36),
-        "mark": (255, 232, 120),
-        "mark2": (255, 248, 200),
+        "ground": (254, 174, 52),
+        "shade": (215, 118, 67),
+        "edge": (115, 62, 57),
+        "mark": (254, 231, 97),
+        "mark2": (255, 243, 176),
         "fin": (254, 210, 90),
+        "fin_tip": (247, 118, 34),
         "eye": (28, 22, 18),
     },
     "ogon": {
-        "ground": (220, 230, 240),
-        "edge": (140, 156, 178),
-        "mark": (250, 252, 255),
-        "mark2": (190, 205, 220),
+        "ground": (244, 247, 251),
+        "shade": (192, 203, 220),
+        "edge": (90, 105, 136),
+        "mark": (255, 255, 255),
+        "mark2": (139, 155, 180),
         "fin": (236, 242, 250),
+        "fin_tip": (254, 174, 52),
         "eye": (22, 24, 32),
     },
     "karasu": {
-        "ground": (32, 34, 48),
-        "edge": (18, 20, 30),
-        "mark": (58, 64, 88),
-        "mark2": (90, 98, 120),
-        "fin": (48, 52, 70),
+        "ground": (38, 43, 68),
+        "shade": (24, 20, 37),
+        "edge": (18, 16, 28),
+        "mark": (58, 68, 102),
+        "mark2": (90, 105, 136),
+        "fin": (58, 68, 102),
+        "fin_tip": (139, 155, 180),
         "eye": (200, 190, 170),
     },
     "chagoi": {
-        "ground": (168, 108, 72),
-        "edge": (96, 58, 42),
-        "mark": (210, 150, 96),
-        "mark2": (120, 72, 48),
-        "fin": (184, 120, 80),
+        "ground": (184, 111, 80),
+        "shade": (115, 62, 57),
+        "edge": (62, 39, 49),
+        "mark": (228, 166, 114),
+        "mark2": (160, 106, 58),
+        "fin": (215, 118, 67),
+        "fin_tip": (190, 74, 47),
         "eye": (24, 18, 16),
     },
 }
@@ -137,105 +154,281 @@ def _lerp(a: float, b: float, t: float) -> float:
     return a + (b - a) * t
 
 
-def _body_half_width(t: float) -> float:
-    if t < 0.12:
-        return 0.22 + 0.55 * (t / 0.12)
-    if t < 0.55:
-        return 0.78 + 0.22 * math.sin(((t - 0.12) / 0.43) * math.pi)
-    u = (t - 0.55) / 0.45
-    return max(0.12, 0.78 * (1.0 - u) ** 0.85)
+def _body_half_width(along: float) -> float:
+    """Slender adult silhouette: blunt nose → shoulder → thin peduncle (~5:1).
+
+    along: 0 at snout, 1 at caudal peduncle (before flare).
+    Returns half-width as fraction of max half-width.
+    """
+    head_slant = 0.18
+    nose_w = 0.52
+    shoulder = 0.30
+    taper_end = 0.92
+    tail_w = 0.26
+    taper_exp = 1.8
+    if along < head_slant:
+        return nose_w + (1.0 - nose_w) * math.sin((along / head_slant) * (math.pi * 0.5))
+    taper_len = taper_end - shoulder
+    taper_prog = max(along - shoulder, 0.0) / max(1e-6, taper_len)
+    return max(1.0 - taper_prog**taper_exp, tail_w)
+
+
+def _put(raw: pygame.Surface, x: int, y: int, rgb: tuple[int, int, int], a: int = 255) -> None:
+    bw, bh = raw.get_size()
+    if 0 <= x < bw and 0 <= y < bh:
+        raw.set_at((x, y), (*rgb, a))
+
+
+def _paint_fin_lobe(
+    raw: pygame.Surface,
+    root_x: float,
+    root_y: float,
+    length: float,
+    half_w: float,
+    base_angle: float,
+    flare: float,
+    bend: float,
+    col: tuple[int, int, int],
+    tip: tuple[int, int, int],
+    outline: bool = True,
+) -> None:
+    """Fan lobe grown backward from root (git-koi-like side/tail fins)."""
+    segs = max(4, int(math.ceil(length)))
+    seg_len = length / segs
+    px, py = root_x, root_y
+    for i in range(segs + 1):
+        along = i / segs
+        # Sin-envelope width: thin at root, fat mid, taper tip.
+        width_prog = 0.12 + 0.88 * along
+        hw = half_w * (math.sin(math.pi * min(1.0, width_prog)) ** 0.6) * (0.55 + 0.45 * flare)
+        ang = base_angle + bend * along
+        nx, ny = -math.sin(ang), math.cos(ang)
+        c = tip if along > 0.62 else col
+        for s in range(-int(hw) - 1, int(hw) + 2):
+            if abs(s) > hw + 0.35:
+                continue
+            fx = int(round(px + nx * s))
+            fy = int(round(py + ny * s))
+            if outline and abs(abs(s) - hw) < 0.85:
+                _put(raw, fx, fy, OUTLINE, 255)
+            else:
+                _put(raw, fx, fy, c, 235 if along > 0.15 else 210)
+        px += math.cos(ang) * seg_len
+        py += math.sin(ang) * seg_len
+
+
+def _mark_color(
+    variety: str,
+    pal: dict[str, tuple[int, int, int]],
+    along: float,
+    lat: float,
+    seed: int,
+) -> tuple[int, int, int]:
+    """Irregular koi plates/spots on a pale ground (original patterns)."""
+    # along: 0 snout → 1 peduncle; lat: -1..1 across body.
+    if abs(lat) > 0.82:
+        return pal["edge"]
+    c = pal["ground"]
+    if lat > 0.35:
+        c = pal.get("shade", pal["edge"])
+
+    def plate(cx: float, cy: float, rx: float, ry: float) -> bool:
+        return ((along - cx) / rx) ** 4 + ((lat - cy) / ry) ** 4 < 1.0
+
+    if variety == "kohaku":
+        leans = ((seed % 5) - 2) * 0.08
+        if plate(0.18, leans * 0.4, 0.12, 0.72) or plate(0.42, leans, 0.14, 0.70) or plate(
+            0.66, -leans * 0.6, 0.11, 0.65
+        ):
+            c = pal["mark"] if abs(lat) < 0.55 else pal["mark2"]
+    elif variety == "asagi":
+        if along < 0.12:
+            c = (244, 246, 250)
+        elif abs(lat) > 0.62:
+            c = pal["mark"] if (int(along * 20) + seed) % 3 else pal["mark2"]
+        else:
+            # Dorsal net / saddle.
+            row = int((lat + 1.0) * 6)
+            col = int(along * 22 + (row % 2) * 0.5)
+            if min(abs((lat + 1) * 6 - row), abs(along * 22 - col)) < 0.18:
+                c = pal.get("net", pal["edge"])
+            else:
+                c = pal.get("dorsal", pal["shade"])
+                if plate(0.35, 0.1, 0.1, 0.35) or plate(0.55, -0.15, 0.08, 0.3):
+                    c = pal["mark2"]
+    elif variety == "yamabuki":
+        if plate(0.25, 0.05, 0.16, 0.55) or plate(0.55, -0.1, 0.14, 0.5):
+            c = pal["mark"]
+        elif abs(lat) < 0.25 and 0.3 < along < 0.5:
+            c = pal["mark2"]
+    elif variety == "ogon":
+        if abs(lat) < 0.3 and 0.2 < along < 0.55 and (seed + int(along * 10)) % 3 == 0:
+            c = pal["mark"]
+        elif plate(0.4, 0.2, 0.12, 0.4):
+            c = pal["mark2"]
+    elif variety == "karasu":
+        if (int(along * 16) ^ int(abs(lat) * 12) ^ seed) & 1:
+            c = pal["mark"]
+        if plate(0.5, 0.0, 0.2, 0.55):
+            c = pal["mark2"]
+    elif variety == "chagoi":
+        if abs(lat) < 0.45 and (hash((seed, int(along * 14), int(lat * 10))) % 5) < 2:
+            c = pal["mark"]
+        elif plate(0.35, -0.15, 0.12, 0.4):
+            c = pal["mark2"]
+
+    # Soft highlight on upper flank.
+    if lat < -0.12 and abs(lat) < 0.55 and along < 0.85:
+        c = tuple(min(255, int(ch + 16)) for ch in c)
+    return c
 
 
 def _paint_pixel_koi(variety: str, frame: int, seed: int) -> pygame.Surface:
-    """Paint one low-res koi frame facing +X; nearest-neighbor scale up."""
+    """Paint one low-res koi frame facing +X; slender body + fan fins + V-tail."""
     pal = PALETTES.get(variety, PALETTES["kohaku"])
     bw, bh = PIXEL_BODY_W, PIXEL_BODY_H
     raw = pygame.Surface((bw, bh), pygame.SRCALPHA)
-    rng = random.Random(seed * 7919 + frame * 17)
     cy = bh // 2
-    wag = math.sin((frame / max(1, SWIM_FRAMES - 1)) * math.pi * 2.0) * 1.15
-    fin_flare = 0.55 + 0.45 * abs(math.sin((frame / max(1, SWIM_FRAMES - 1)) * math.pi))
+    phase = (frame / max(1, SWIM_FRAMES - 1)) * math.pi * 2.0
+    wag = math.sin(phase) * 1.35
+    fin_flare = 0.62 + 0.38 * abs(math.sin(phase * 0.5))
 
-    # Tail fork
-    for k in range(7):
-        u = k / 6.0
-        spread = (u - 0.5) * 10.0 * fin_flare
-        tx = int(2 + u * 5)
-        ty = int(cy + spread + wag * (0.4 + u))
-        col = pal["fin"] if k % 2 == 0 else pal["edge"]
-        if 0 <= tx < bw and 0 <= ty < bh:
-            raw.set_at((tx, ty), (*col, 230))
-            if 0 <= ty + 1 < bh:
-                raw.set_at((tx, ty + 1), (*pal["fin"], 160))
+    # Body span: leave room for forked tail on the left, snout on the right.
+    body_x0 = 18  # peduncle
+    body_x1 = bw - 4  # snout
+    body_len = body_x1 - body_x0
+    max_half = body_len * 0.10  # ~5:1 length:width
 
-    # Body + markings
-    for x in range(6, bw - 2):
-        t = (x - 6) / float(bw - 8)
-        half = _body_half_width(t) * (bh * 0.42)
-        y_off = wag * (t ** 1.4) * 1.6
+    # --- Tail (two V lobes, grown backward from peduncle) ---
+    ped_x = float(body_x0)
+    ped_y = float(cy + wag * 0.9)
+    ped_half = max_half * _body_half_width(0.98)
+    tail_len = max_half * 2.0 * 1.75
+    tail_hw = max_half * 1.15
+    for side, ang_off, bend in (
+        (-1, -0.62, -0.22 * fin_flare),
+        (1, 0.48, 0.18 * fin_flare),
+    ):
+        _paint_fin_lobe(
+            raw,
+            ped_x,
+            ped_y + side * ped_half * 0.2,
+            tail_len,
+            tail_hw,
+            math.pi + ang_off,  # backward (−X)
+            fin_flare,
+            bend,
+            pal["fin"],
+            pal.get("fin_tip", pal["mark"]),
+        )
+
+    # --- Body + markings ---
+    for xi in range(body_x0, body_x1 + 1):
+        # along_from_snout: 0 at snout (right), 1 at peduncle (left)
+        along = (body_x1 - xi) / float(body_len)
+        # wave stronger toward tail
+        y_off = wag * (along**1.35) * 1.7
+        half = max(1.15, max_half * _body_half_width(along))
         y0 = int(cy - half + y_off)
         y1 = int(cy + half + y_off)
         for y in range(max(0, y0), min(bh, y1 + 1)):
             lat = (y - (cy + y_off)) / max(0.5, half)
+            if abs(lat) > 1.0:
+                continue
+            c = _mark_color(variety, pal, along, lat, seed)
+            # Inner rim shade near outline.
             if abs(lat) > 0.78:
                 c = pal["edge"]
-            else:
-                c = pal["ground"]
-                if variety == "kohaku":
-                    if 0.08 < t < 0.78 and abs(lat - ((seed % 5) - 2) * 0.08) < 0.55:
-                        plate = math.sin(t * 9.0 + seed) * 0.35 + math.sin(lat * 5.0)
-                        if plate > 0.15 and (hash((seed, int(t * 12), int(lat * 8))) % 7) != 0:
-                            c = pal["mark"] if plate > 0.45 else pal["mark2"]
-                elif variety == "asagi":
-                    if abs(lat) < 0.55 and t > 0.1:
-                        if (int(t * 18) + int((lat + 1) * 9)) % 3 == 0:
-                            c = pal["edge"]
-                        else:
-                            c = pal["ground"]
-                    if lat > 0.55:
-                        c = pal["mark"]
-                elif variety == "yamabuki":
-                    if abs(lat) < 0.35 and 0.2 < t < 0.55:
-                        c = pal["mark"]
-                elif variety == "ogon":
-                    if abs(lat) < 0.25 and 0.25 < t < 0.45:
-                        c = pal["mark"]
-                elif variety == "karasu":
-                    if (int(t * 14) ^ int(abs(lat) * 10)) & 1:
-                        c = pal["mark"]
-                elif variety == "chagoi":
-                    if abs(lat) < 0.4 and rng.random() < 0.35:
-                        c = pal["mark"]
-            if lat < -0.15 and abs(lat) < 0.55 and t < 0.85:
-                c = tuple(min(255, int(ch + 18)) for ch in c)
-            raw.set_at((x, y), (*c, 255))
+            _put(raw, xi, y, c, 255)
 
-    # Pectoral fins
-    px = int(6 + 0.28 * (bw - 8))
+    # Dark outline around body (1px ring on transparent neighbors).
+    for xi in range(body_x0 - 1, body_x1 + 2):
+        for y in range(bh):
+            pix = raw.get_at((xi, y)) if 0 <= xi < bw else (0, 0, 0, 0)
+            if pix[3] != 0:
+                continue
+            for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                nx, ny = xi + dx, y + dy
+                if 0 <= nx < bw and 0 <= ny < bh and raw.get_at((nx, ny))[3] != 0:
+                    # Only outline body column neighborhood (fins already outlined).
+                    if body_x0 - 1 <= nx <= body_x1 + 1:
+                        _put(raw, xi, y, OUTLINE, 255)
+                    break
+
+    # --- Pectoral fins (large wing-like fans just behind shoulders) ---
+    pec_along = 0.20
+    pec_x = body_x1 - pec_along * body_len
+    pec_y = cy + wag * (pec_along**1.3) * 1.2
+    pec_len = max_half * 2.0 * 1.45
+    pec_hw = max_half * 1.15
     for side in (-1, 1):
-        for i in range(5):
-            fx = px + i // 2
-            fy = int(cy + side * (3 + i * 0.9 * fin_flare) + wag * 0.3)
-            if 0 <= fx < bw and 0 <= fy < bh:
-                raw.set_at((fx, fy), (*pal["fin"], 210))
+        root_y = pec_y + side * max_half * _body_half_width(pec_along) * 0.85
+        # Angle more lateral/backward so fins read as wide fans, not stubs.
+        _paint_fin_lobe(
+            raw,
+            pec_x,
+            root_y,
+            pec_len,
+            pec_hw,
+            math.pi + side * 0.85,
+            fin_flare,
+            side * 0.22 * fin_flare,
+            pal["fin"],
+            pal.get("fin_tip", pal["mark"]),
+        )
 
-    # Eye
-    ex = int(6 + 0.88 * (bw - 8))
-    ey = cy - 2
-    if 0 <= ex < bw and 0 <= ey < bh:
-        raw.set_at((ex, ey), (*pal["eye"], 255))
-        if ey + 1 < bh:
-            raw.set_at((ex, ey + 1), (255, 255, 255, 200))
+    # --- Pelvic fins (smaller, mid-body) ---
+    pel_along = 0.47
+    pel_x = body_x1 - pel_along * body_len
+    pel_y = cy + wag * (pel_along**1.3) * 1.4
+    pel_len = max_half * 2.0 * 0.72
+    pel_hw = max_half * 0.55
+    for side in (-1, 1):
+        root_y = pel_y + side * max_half * _body_half_width(pel_along) * 0.7
+        _paint_fin_lobe(
+            raw,
+            pel_x,
+            root_y,
+            pel_len,
+            pel_hw,
+            math.pi + side * 0.55,
+            fin_flare * 0.9,
+            side * 0.12,
+            pal["fin"],
+            pal.get("fin_tip", pal["mark"]),
+        )
 
-    # Barbel hint
-    for i in range(3):
-        wx = ex + 1 + i // 2
-        wy = ey + 1 + i
-        if 0 <= wx < bw and 0 <= wy < bh:
-            raw.set_at((wx, wy), (*pal["edge"], 180))
+    # Eyes (paired, near snout)
+    eye_along = 0.07
+    ex = int(body_x1 - eye_along * body_len)
+    for side in (-1, 1):
+        ey = int(cy + side * max_half * 0.55 + wag * 0.1)
+        _put(raw, ex, ey, pal["eye"], 255)
+        _put(raw, ex, ey + side, (255, 255, 255), 180)
+
+    # Barbels from snout
+    snx = body_x1
+    for side in (-1, 1):
+        for i in range(3):
+            _put(
+                raw,
+                snx + 1 + i // 2,
+                int(cy + side * (1 + i * 0.7) + wag * 0.05),
+                pal.get("shade", pal["edge"]),
+                200,
+            )
+
+    # Dorsal shade line (thin darker spine)
+    for xi in range(body_x0 + 2, body_x1 - 4):
+        along = (body_x1 - xi) / float(body_len)
+        if 0.25 < along < 0.65:
+            yy = int(cy + wag * (along**1.35) * 1.7)
+            pix = raw.get_at((xi, yy))
+            if pix[3]:
+                dim = tuple(max(0, ch - 28) for ch in pix[:3])
+                _put(raw, xi, yy, dim, 255)
 
     scaled = pygame.transform.scale(raw, (bw * PIXEL_SCALE, bh * PIXEL_SCALE))
-    # convert_alpha needs a display mode; skip until main() creates one.
     if pygame.display.get_surface() is not None:
         return scaled.convert_alpha()
     return scaled
@@ -540,14 +733,14 @@ class PixelKoi:
 
         if self.state == SwimState.CRUISE:
             target_speed = self.base_speed * (0.72 + 0.45 * beat)
-            self.turn_vel += random.uniform(-0.55, 0.55) * dt
+            self.turn_vel += random.uniform(-0.45, 0.45) * dt
             self.turn_vel *= 0.96
         elif self.state == SwimState.GLIDE:
             target_speed = self.base_speed * (0.38 + 0.2 * beat)
             self.turn_vel *= 0.9
         elif self.state == SwimState.REST:
             target_speed = self.base_speed * 0.1
-            self.turn_vel += math.sin(self.phase * 0.9) * 0.35 * dt
+            self.turn_vel += math.sin(self.phase * 0.9) * 0.28 * dt
             self.turn_vel *= 0.92
         elif self.state == SwimState.DART:
             target_speed = self.base_speed * (1.55 + 0.9 * beat)
@@ -555,6 +748,15 @@ class PixelKoi:
         else:
             target_speed = self.base_speed * (0.22 + 0.35 * beat)
             self.turn_vel *= 0.94
+
+        # Prefer near-horizontal headings (aquarium left/right swim feel).
+        if self.call_timer <= 0 and self.scatter_timer <= 0 and self.state in (
+            SwimState.CRUISE,
+            SwimState.GLIDE,
+            SwimState.FEED,
+        ):
+            horiz = math.pi if math.cos(self.angle) < 0.0 else 0.0
+            self.turn_vel += _norm_pi(horiz - self.angle) * HORIZONTAL_BIAS * dt
 
         self.speed += (target_speed - self.speed) * min(1.0, 2.4 * dt)
 
@@ -817,37 +1019,38 @@ def _load_overlay(path: Path) -> KoiOverlayVideo | None:
 
 
 def _spawn_koi() -> list[PixelKoi]:
+    # Flattened ellipses → more horizontal lap feel (like git-koi lap courses).
     circuits = [
-        SoftCircuit(W * 0.5, H * 0.48, 380, 220, 0.00),
-        SoftCircuit(W * 0.32, H * 0.32, 160, 70, 0.50),
-        SoftCircuit(W * 0.68, H * 0.34, 160, 70, 0.50),
-        SoftCircuit(W * 0.50, H * 0.52, 220, 70, 0.00),
-        SoftCircuit(W * 0.30, H * 0.68, 150, 55, 0.50),
-        SoftCircuit(W * 0.70, H * 0.68, 150, 55, 0.00),
-        SoftCircuit(W * 0.48, H * 0.38, 280, 140, 0.25),
-        SoftCircuit(W * 0.42, H * 0.60, 200, 90, 0.70),
-        SoftCircuit(W * 0.58, H * 0.58, 190, 85, 0.15),
+        SoftCircuit(W * 0.5, H * 0.48, 400, 140, 0.00),
+        SoftCircuit(W * 0.32, H * 0.32, 180, 48, 0.50),
+        SoftCircuit(W * 0.68, H * 0.34, 180, 48, 0.50),
+        SoftCircuit(W * 0.50, H * 0.52, 260, 52, 0.00),
+        SoftCircuit(W * 0.30, H * 0.68, 170, 42, 0.50),
+        SoftCircuit(W * 0.70, H * 0.68, 170, 42, 0.00),
+        SoftCircuit(W * 0.48, H * 0.38, 300, 90, 0.25),
+        SoftCircuit(W * 0.42, H * 0.60, 220, 58, 0.70),
+        SoftCircuit(W * 0.58, H * 0.58, 210, 55, 0.15),
     ]
-    # Speeds kept deliberately low for a calm pixel-pond glide.
+    # Speeds kept deliberately low; ~18 fish; scale down a bit for longer sprites.
     specs = [
-        (circuits[0], "kohaku", 24, 1.05, 0.05),
-        (circuits[0], "yamabuki", 22, 1.00, 0.55),
-        (circuits[0], "asagi", 21, 0.96, 0.30),
-        (circuits[1], "asagi", 20, 0.95, 0.10),
-        (circuits[1], "kohaku", 19, 0.88, 0.65),
-        (circuits[2], "kohaku", 20, 0.92, 0.20),
-        (circuits[2], "yamabuki", 18, 0.86, 0.72),
-        (circuits[3], "asagi", 19, 0.90, 0.40),
-        (circuits[3], "karasu", 18, 0.85, 0.75),
-        (circuits[4], "ogon", 20, 0.88, 0.15),
-        (circuits[4], "chagoi", 17, 0.82, 0.80),
-        (circuits[5], "chagoi", 19, 0.90, 0.60),
-        (circuits[5], "ogon", 18, 0.84, 0.35),
-        (circuits[6], "kohaku", 21, 0.98, 0.45),
-        (circuits[6], "karasu", 17, 0.80, 0.88),
-        (circuits[7], "yamabuki", 18, 0.87, 0.22),
-        (circuits[8], "asagi", 19, 0.89, 0.58),
-        (circuits[8], "chagoi", 16, 0.78, 0.05),
+        (circuits[0], "kohaku", 24, 0.92, 0.05),
+        (circuits[0], "yamabuki", 22, 0.88, 0.55),
+        (circuits[0], "asagi", 21, 0.86, 0.30),
+        (circuits[1], "asagi", 20, 0.84, 0.10),
+        (circuits[1], "kohaku", 19, 0.78, 0.65),
+        (circuits[2], "kohaku", 20, 0.82, 0.20),
+        (circuits[2], "yamabuki", 18, 0.76, 0.72),
+        (circuits[3], "asagi", 19, 0.80, 0.40),
+        (circuits[3], "karasu", 18, 0.74, 0.75),
+        (circuits[4], "ogon", 20, 0.78, 0.15),
+        (circuits[4], "chagoi", 17, 0.72, 0.80),
+        (circuits[5], "chagoi", 19, 0.80, 0.60),
+        (circuits[5], "ogon", 18, 0.74, 0.35),
+        (circuits[6], "kohaku", 21, 0.86, 0.45),
+        (circuits[6], "karasu", 17, 0.70, 0.88),
+        (circuits[7], "yamabuki", 18, 0.76, 0.22),
+        (circuits[8], "asagi", 19, 0.78, 0.58),
+        (circuits[8], "chagoi", 16, 0.68, 0.05),
     ]
     fish: list[PixelKoi] = []
     for circ, variety, speed, scale, phase in specs:

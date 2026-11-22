@@ -1,13 +1,11 @@
 """
-Standalone pygame koi pond — original procedural animation.
+Standalone pygame koi pond.
 
-Ideas inspired by nagomi (https://github.com/msk1039/nagomi, PolyForm Noncommercial):
-click-to-call, scatter, ripples, swim-state variety, and depth cues. This file is an
-independent pygame implementation; it does not copy nagomi's TypeScript/Three.js source.
-
-Optional full-pond MP4 overlay (checkerboard-keyed) sits under the procedural fish when
-`animation/assets/koi_fish_swimming_animated_overlay.mp4` is present. Missing file or
-`--no-overlay` falls back to procedural-only.
+Default: full-pond keyed MP4 overlay only (the two fish in
+`animation/assets/koi_fish_swimming_animated_overlay.mp4`). No procedural RealisticKoi
+are spawned while overlay mode is on. Pond bed, ambient/click ripples, and water surface
+stay. Missing file, OpenCV failure, or `--no-overlay` falls back to the original
+procedural fish (nagomi-inspired click-call / scatter / depth — original pygame code).
 
 Run:
     python animation/koi_fish.py
@@ -39,8 +37,8 @@ HINT_FADE_S = 12.0
 
 _ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 DEFAULT_OVERLAY_MP4 = _ASSETS_DIR / "koi_fish_swimming_animated_overlay.mp4"
-# Soft opacity for the keyed overlay so procedural fish stay readable on top.
-OVERLAY_OPACITY = 0.88
+# Full opacity in overlay-only mode (no procedural fish underneath/on top).
+OVERLAY_OPACITY = 1.0
 
 
 def _try_import_cv2():
@@ -728,7 +726,7 @@ def draw_water_surface(surf, t):
         surf.blit(ps, (int(x - c), int(y - c)))
 
 
-def draw_hint(surf, elapsed):
+def draw_hint(surf, elapsed, overlay_only: bool = False):
     """Brief on-screen control hint that fades after a few seconds."""
     if elapsed > HINT_FADE_S:
         return
@@ -736,10 +734,16 @@ def draw_hint(surf, elapsed):
     alpha = int(210 * fade)
     if alpha < 8:
         return
-    lines = [
-        "Click / tap — call the koi",
-        "Space — scatter    O — overlay    Esc — quit",
-    ]
+    if overlay_only:
+        lines = [
+            "Click / tap — ripples",
+            "O — toggle overlay    Esc — quit",
+        ]
+    else:
+        lines = [
+            "Click / tap — call the koi",
+            "Space — scatter    Esc — quit",
+        ]
     pad_x, pad_y = 14, 10
     rendered = [HINT_FONT.render(line, True, (220, 240, 250)) for line in lines]
     box_w = max(r.get_width() for r in rendered) + pad_x * 2
@@ -761,7 +765,7 @@ def _parse_args(argv: list[str] | None = None):
         "--overlay",
         type=Path,
         default=DEFAULT_OVERLAY_MP4,
-        help="MP4 full-pond overlay path (checkerboard-keyed)",
+        help="MP4 full-pond overlay path (checkerboard-keyed; default when file exists)",
     )
     parser.add_argument(
         "--no-overlay",
@@ -769,6 +773,15 @@ def _parse_args(argv: list[str] | None = None):
         help="Procedural fish only (ignore overlay MP4)",
     )
     return parser.parse_args(argv)
+
+
+def _spawn_procedural_koi() -> list[RealisticKoi]:
+    return [
+        RealisticKoi(420, 310, 0.3, 105, 1.18, "kohaku"),
+        RealisticKoi(740, 450, 3.4, 95, 1.12, "sanke"),
+        RealisticKoi(580, 520, -1.2, 88, 1.00, "showa"),
+        RealisticKoi(320, 500, -0.5, 92, 0.92, "ogon"),
+    ]
 
 
 def main(argv: list[str] | None = None):
@@ -785,12 +798,11 @@ def main(argv: list[str] | None = None):
         else:
             print(f"[koi] Overlay file missing ({candidate}); procedural-only.", file=sys.stderr)
 
-    kois = [
-        RealisticKoi(420, 310, 0.3, 105, 1.18, "kohaku"),
-        RealisticKoi(740, 450, 3.4, 95, 1.12, "sanke"),
-        RealisticKoi(580, 520, -1.2, 88, 1.00, "showa"),
-        RealisticKoi(320, 500, -0.5, 92, 0.92, "ogon"),
-    ]
+    # Overlay-only is the default: never mix MP4 fish with procedural RealisticKoi.
+    overlay_only = overlay is not None and overlay.available
+    kois: list[RealisticKoi] = [] if overlay_only else _spawn_procedural_koi()
+    if overlay_only:
+        print("[koi] Overlay-only mode (no procedural fish).", file=sys.stderr)
 
     ripples = []
     ripple_timer = 0.0
@@ -809,10 +821,9 @@ def main(argv: list[str] | None = None):
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
                         running = False
-                    elif event.key == pygame.K_SPACE:
+                    elif event.key == pygame.K_SPACE and kois:
                         for k in kois:
                             k.scatter()
-                        # Soft surface ripples near each fish when they scatter.
                         for k in kois:
                             ripples.append(Ripple(k.x, k.y, max_r=90, strength=0.7))
                     elif event.key == pygame.K_o and overlay is not None and overlay.available:
@@ -825,25 +836,30 @@ def main(argv: list[str] | None = None):
 
             screen.blit(pond_bed, (0, 0))
 
-            # Full-pond keyed MP4 under the interactive procedural fish.
             if overlay is not None:
                 overlay.update(dt)
                 overlay.draw(screen)
 
-            # Draw deeper fish first so nearer fish sit on top.
+            # Procedural fish only when overlay-only is off (--no-overlay / missing MP4).
             for k in sorted(kois, key=lambda fish: fish.depth, reverse=True):
                 k.update(dt)
                 k.draw(screen)
 
-            # Occasional ripples from near-surface fish motion.
-            ripple_timer += dt
-            if ripple_timer > 0.75:
-                ripple_timer = 0.0
-                candidates = [k for k in kois if k.depth < 0.55] or kois
-                chosen = random.choice(candidates)
-                ripples.append(
-                    Ripple(chosen.x, chosen.y, max_r=85, strength=0.55 + (1.0 - chosen.depth) * 0.35)
-                )
+            # Occasional ripples from near-surface procedural fish motion.
+            if kois:
+                ripple_timer += dt
+                if ripple_timer > 0.75:
+                    ripple_timer = 0.0
+                    candidates = [k for k in kois if k.depth < 0.55] or kois
+                    chosen = random.choice(candidates)
+                    ripples.append(
+                        Ripple(
+                            chosen.x,
+                            chosen.y,
+                            max_r=85,
+                            strength=0.55 + (1.0 - chosen.depth) * 0.35,
+                        )
+                    )
 
             # Soft ambient surface ripples (wind / drip feel).
             surface_ripple_timer += dt
@@ -865,7 +881,7 @@ def main(argv: list[str] | None = None):
                     ripples.remove(r)
 
             draw_water_surface(screen, sim_time)
-            draw_hint(screen, sim_time)
+            draw_hint(screen, sim_time, overlay_only=overlay_only)
 
             pygame.display.flip()
     finally:

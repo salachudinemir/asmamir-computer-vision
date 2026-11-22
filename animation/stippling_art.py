@@ -29,16 +29,34 @@ FILL_MODE = "waterfall"
 
 
 def load_and_prepare_image(path):
-    if os.path.exists(path):
-        img = cv2.imread(path)
-        img = cv2.resize(img, (W, H))
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        return gray
-    else:
-        # Fallback placeholder if image not found
-        gray = np.zeros((H, W), dtype=np.uint8)
-        cv2.putText(gray, "MONALISA", (W // 2 - 200, H // 2), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 3)
-        return gray
+    """Load image and fit inside W×H without stretch (letterbox/pillarbox on paper BG)."""
+    bg_gray = int(round(0.299 * BG_COLOR[0] + 0.587 * BG_COLOR[1] + 0.114 * BG_COLOR[2]))
+    canvas = np.full((H, W), bg_gray, dtype=np.uint8)
+
+    img = cv2.imread(path) if os.path.exists(path) else None
+    if img is None:
+        cv2.putText(
+            canvas,
+            "MONALISA",
+            (W // 2 - 200, H // 2),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            2,
+            (255, 255, 255),
+            3,
+        )
+        return canvas
+
+    ih, iw = img.shape[:2]
+    scale = min(W / iw, H / ih)
+    nw = max(1, int(round(iw * scale)))
+    nh = max(1, int(round(ih * scale)))
+    resized = cv2.resize(img, (nw, nh), interpolation=cv2.INTER_AREA)
+    gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+
+    x0 = (W - nw) // 2
+    y0 = (H - nh) // 2
+    canvas[y0 : y0 + nh, x0 : x0 + nw] = gray
+    return canvas
 
 
 def prepare_darkness_map(gray):

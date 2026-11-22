@@ -96,7 +96,6 @@ print(f"Ready: {len(points)} points (step={STEP}, gamma={GAMMA}, contrast={CONTR
 current_count = 0
 batch_size = 2500
 running = True
-font = pygame.font.SysFont("Arial", 16)
 
 while running:
     for event in pygame.event.get():
@@ -117,14 +116,6 @@ while running:
     for i in range(current_count):
         pt = points[i]
         screen.set_at((int(pt[0]), int(pt[1])), DOT_COLOR)
-
-    # UI overlay info
-    txt = font.render(
-        f"Points: {current_count} / {len(points)} | Press 'R' to restart, ESC to exit",
-        True,
-        (90, 90, 90),
-    )
-    screen.blit(txt, (20, H - 30))
 
     pygame.display.flip()
     clock.tick(60)

@@ -51,6 +51,10 @@ SPRITE_FRAME_STRIDE = 8
 SPRITE_MIN_AREA = 28_000
 SPRITE_MAX_AREA = 185_000
 SPRITE_TARGET_LENGTH = 220.0  # normalize crops before per-fish scaling
+# After canonicalize, every surface faces +X (nose right). Draw uses flip L/R + pitch.
+SPRITE_CANON_HEADING = 0.0  # radians; nose along +X
+SPRITE_CYCLE_LEN = 4  # light swim-pose cycle per fish (stable base + nearby frames)
+SPRITE_CYCLE_RATE = 0.22  # phase → cycle index (slow; avoids tumble)
 
 
 def _try_import_cv2():
@@ -104,7 +108,12 @@ def _key_checkerboard_bgr(frame_bgr, chroma_max: float = 18.0, gray_lo: float = 
 
 
 class KoiSpriteBank:
-    """Keyed fish crops from the overlay MP4 for blitting onto RealisticKoi."""
+    """Keyed fish crops from the overlay MP4 for blitting onto RealisticKoi.
+
+    Every stored surface is canonicalized so the nose faces +X (right). Draw-time
+    code then flips for left swim and applies a small pitch rotation — no full
+    360 tumble from mismatched per-crop headings.
+    """
 
     def __init__(
         self,
@@ -113,7 +122,8 @@ class KoiSpriteBank:
         frame_stride: int = SPRITE_FRAME_STRIDE,
     ):
         self.path = Path(path)
-        self._sprites: list[tuple[pygame.Surface, float, float]] = []
+        # (surface facing +X, body_length_px)
+        self._sprites: list[tuple[pygame.Surface, float]] = []
         self._ok = False
         self._open(max_sprites=max_sprites, frame_stride=frame_stride)
 
@@ -128,13 +138,16 @@ class KoiSpriteBank:
         self._sprites.clear()
         self._ok = False
 
-    def pick(self, fish_index: int, phase: float) -> tuple[pygame.Surface, float, float] | None:
-        """Return (surface, heading_rad, body_length_px); surface nose ≈ heading."""
+    def pick(self, fish_index: int, phase: float) -> tuple[pygame.Surface, float] | None:
+        """Return (surface facing +X, body_length_px) with a stable per-fish cycle."""
         if not self.available:
             return None
         n = len(self._sprites)
-        # Slow phase walk so each fish cycles distinct swim poses.
-        idx = (fish_index * 3 + int(phase * 0.55)) % n
+        cycle_len = min(SPRITE_CYCLE_LEN, n)
+        # Stable base per fish; light nearby-frame cycle for swim pose (not bank scramble).
+        base = (fish_index * cycle_len) % n
+        step = int(phase * SPRITE_CYCLE_RATE) % cycle_len
+        idx = (base + step) % n
         return self._sprites[idx]
 
     def _open(self, max_sprites: int, frame_stride: int) -> None:
@@ -152,7 +165,7 @@ class KoiSpriteBank:
             print(f"[koi] Could not open sprite source: {self.path}", file=sys.stderr)
             return
 
-        sprites: list[tuple[pygame.Surface, float, float]] = []
+        sprites: list[tuple[pygame.Surface, float]] = []
         frame_i = 0
         while len(sprites) < max_sprites:
             ok, frame = cap.read()
@@ -193,8 +206,11 @@ class KoiSpriteBank:
                 surf = self._rgba_to_surface(rgba, target_length=SPRITE_TARGET_LENGTH)
                 if surf is None:
                     continue
-                # Length after normalize ≈ SPRITE_TARGET_LENGTH.
-                sprites.append((surf, heading, float(SPRITE_TARGET_LENGTH)))
+                canon = self._canonicalize_facing(surf, heading)
+                if canon is None:
+                    continue
+                # Length after normalize ≈ SPRITE_TARGET_LENGTH; nose faces +X.
+                sprites.append((canon, float(SPRITE_TARGET_LENGTH)))
 
         cap.release()
         if not sprites:
@@ -202,7 +218,22 @@ class KoiSpriteBank:
             return
         self._sprites = sprites
         self._ok = True
-        print(f"[koi] Sprite bank ready: {len(sprites)} keyed fish crops.", file=sys.stderr)
+        print(
+            f"[koi] Sprite bank ready: {len(sprites)} keyed crops "
+            f"(canonical +X facing, cycle {min(SPRITE_CYCLE_LEN, len(sprites))}).",
+            file=sys.stderr,
+        )
+
+    @staticmethod
+    def _canonicalize_facing(surf: pygame.Surface, heading: float) -> pygame.Surface | None:
+        """Rotate so the nose points along +X (SPRITE_CANON_HEADING)."""
+        # pygame.rotozoom: positive degrees = CCW. Image coords share atan2 (Y down).
+        rot_deg = -math.degrees(heading - SPRITE_CANON_HEADING)
+        try:
+            out = pygame.transform.rotozoom(surf, rot_deg, 1.0)
+        except pygame.error:
+            return None
+        return out.convert_alpha()
 
     @staticmethod
     def _crop_component(frame_bgr, alpha, labels, stats, comp_i, cv2, np):
@@ -233,12 +264,20 @@ class KoiSpriteBank:
         proj = centered @ axis
         lo = proj < np.percentile(proj, 12)
         hi = proj > np.percentile(proj, 88)
+        # Head cue: brighter tip (orange/white) and/or narrower cross-section.
         bright = rgb.astype(np.float32).mean(axis=2)
         lo_b = float(bright[ys[lo], xs[lo]].mean()) if lo.any() else 0.0
         hi_b = float(bright[ys[hi], xs[hi]].mean()) if hi.any() else 0.0
+        # Cross-section width near each tip (perpendicular spread).
+        perp = np.array([-axis[1], axis[0]], dtype=np.float64)
+        lat = centered @ perp
+        lo_w = float(np.std(lat[lo])) if lo.any() else 1.0
+        hi_w = float(np.std(lat[hi])) if hi.any() else 1.0
         heading = math.atan2(float(axis[1]), float(axis[0]))
-        # Prefer the brighter tip as the head (orange / white face).
-        if hi_b < lo_b:
+        # Score: prefer bright + tapered tip as head.
+        hi_score = hi_b / 255.0 - 0.35 * (hi_w / max(lo_w, hi_w, 1e-3))
+        lo_score = lo_b / 255.0 - 0.35 * (lo_w / max(lo_w, hi_w, 1e-3))
+        if hi_score < lo_score:
             heading += math.pi
         length = float(np.percentile(proj, 95) - np.percentile(proj, 5))
         length = max(length, float(max(w, h)) * 0.55)
@@ -464,6 +503,8 @@ class RealisticKoi:
         self.call_target = None
         self.scatter_timer = 0.0
         self.scatter_heading = angle
+        # Sprite L/R facing with hysteresis (avoids flicker when swimming vertical).
+        self._face_left = math.cos(angle) < 0.0
 
         # Follow-the-leader spine (32 joints).
         self.num_joints = 32
@@ -692,18 +733,38 @@ class RealisticKoi:
                 return
         self._draw_procedural(surf)
 
+    @staticmethod
+    def _norm_pi(a: float) -> float:
+        return (a + math.pi) % (2 * math.pi) - math.pi
+
     def _draw_sprite(self, surf: pygame.Surface, sprites: KoiSpriteBank) -> bool:
         picked = sprites.pick(self.sprite_index, self.phase)
         if picked is None:
             return False
-        base, heading, body_len = picked
+        base, body_len = picked
         # Match procedural body length (~147 * scale) to the keyed crop.
         target_len = max(48.0, 147.0 * self.scale)
         zoom = target_len / max(1.0, body_len)
-        # pygame.rotozoom rotates CCW in degrees; align sprite heading → swim angle.
-        rot_deg = -math.degrees(self.angle - heading)
+
+        # Bank surfaces are canonical nose-+X. Prefer stable facing:
+        # flip horizontally when swimming left, then pitch about that axis
+        # (avoids head/tail tumble from mismatched per-frame headings).
+        c = math.cos(self.angle)
+        if c < -0.15:
+            self._face_left = True
+        elif c > 0.15:
+            self._face_left = False
+        facing_left = self._face_left
+        pose = pygame.transform.flip(base, True, False) if facing_left else base
+        if facing_left:
+            # Flip mirrors rotation sense; pitch relative to -X (π).
+            pitch = self._norm_pi(self.angle - math.pi)
+            rot_deg = math.degrees(pitch)
+        else:
+            pitch = self._norm_pi(self.angle)
+            rot_deg = -math.degrees(pitch)
         try:
-            img = pygame.transform.rotozoom(base, rot_deg, zoom)
+            img = pygame.transform.rotozoom(pose, rot_deg, zoom)
         except pygame.error:
             return False
         opacity = self._opacity()

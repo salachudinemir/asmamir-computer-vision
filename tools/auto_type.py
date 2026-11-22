@@ -2,6 +2,10 @@
 
 Uses tools/click_sound.py so ketik.mp3 plays reliably while pasting.
 
+Indent rule: paste each source line verbatim (leading spaces kept). Never lstrip.
+After Enter, clear VS Code auto-indent (Esc + Home/Shift+Home + Backspace) so the
+next paste is not shifted right on every def/block.
+
 After typing into the focused editor:
   1. SAVE — write the demo source to tools/animasi.py on disk (Python I/O).
      No VS Code Save As dialog, so the RUN command cannot leak into a filename.
@@ -38,6 +42,8 @@ WAIT_SAVE_AS_OVERWRITE = 0.6
 WAIT_AFTER_DISK_WRITE = 0.4
 WAIT_TERMINAL_FOCUS = 0.8
 WAIT_BEFORE_RUN = 0.5
+# Brief settle after clearing editor auto-indent before the next clipboard paste.
+WAIT_AFTER_DEDENT = 0.03
 
 kode_turtle = """from turtle import (
     Terminator,
@@ -85,20 +91,51 @@ def paste_text(text: str, click: bool = True) -> None:
         play()
 
 
+def clear_editor_auto_indent() -> None:
+    """Cancel VS Code auto-indent on the current line so the next paste keeps source spaces.
+
+    After Enter, the editor inserts leading whitespace. Without clearing it, pasting a
+    line that already has its own indent stacks and drifts right every def/block.
+    """
+    pyautogui.press("esc")
+    # Smart Home: first press → first non-ws, second → column 0.
+    pyautogui.press("home")
+    pyautogui.press("home")
+    # Select any leftover auto-indent on this line and delete it.
+    pyautogui.hotkey("shift", "end")
+    pyautogui.press("backspace")
+    # Second pass covers sticky/smart-home edge cases on empty indented lines.
+    pyautogui.hotkey("shift", "home")
+    pyautogui.press("backspace")
+    time.sleep(WAIT_AFTER_DEDENT)
+
+
 def type_lines(source: str, per_char: bool, pause: float) -> None:
-    for baris in source.splitlines():
-        teks = baris.lstrip()
-        if teks == "done()":
+    """Paste whole source lines with original leading spaces (no lstrip).
+
+    Prefer line paste of the exact source. After each Enter, clear editor auto-indent
+    before the next line so VS Code cannot re-indent on top of source spaces.
+    """
+    lines = source.splitlines()
+    for i, baris in enumerate(lines):
+        if i > 0:
+            clear_editor_auto_indent()
+
+        # Special-case match uses stripped text; paste still uses exact `baris`.
+        if baris.lstrip(" \t") == "done()":
             pyautogui.press("backspace")
-        if teks:
+
+        if baris:
             if per_char:
-                for ch in teks:
+                # Exact characters including leading spaces (no stripped teks).
+                for ch in baris:
                     paste_text(ch, click=True)
                     time.sleep(pause)
             else:
-                # Line-paste: one click per line (after Enter), not paste+Enter spam.
-                paste_text(teks, click=False)
+                # Line-paste: clipboard keeps original spaces; one click after Enter.
+                paste_text(baris, click=False)
                 time.sleep(pause)
+
         pyautogui.press("esc")
         pyautogui.press("enter")
         if not per_char:

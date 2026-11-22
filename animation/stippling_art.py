@@ -13,6 +13,8 @@ clock = pygame.time.Clock()
 BG_COLOR = (0, 0, 0)
 MAX_POINTS = 150000
 IMAGE_NAME = "monalisa.jpg"
+# Reveal order: "waterfall" = top-to-bottom (y then x); "shuffle" = random
+FILL_MODE = "waterfall"
 
 def load_and_prepare_image(path):
     if os.path.exists(path):
@@ -39,8 +41,15 @@ for y in range(0, h, 3):
         if random.randint(0, 255) < val:
             points.append((x + random.uniform(-1.5, 1.5), y + random.uniform(-1.5, 1.5)))
 
-random.shuffle(points)
-points = points[:MAX_POINTS]
+# Subsample first so density stays image-wide; then order the reveal.
+if len(points) > MAX_POINTS:
+    random.shuffle(points)
+    points = points[:MAX_POINTS]
+
+if FILL_MODE == "waterfall":
+    points.sort(key=lambda p: (p[1], p[0]))
+else:
+    random.shuffle(points)
 
 current_count = 0
 batch_size = 2000

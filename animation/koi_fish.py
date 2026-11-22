@@ -1,20 +1,18 @@
 """
 Standalone pygame koi pond.
 
-Default: full-pond keyed MP4 overlay only (the two fish in
-`animation/assets/koi_fish_swimming_animated_overlay.mp4`). No procedural RealisticKoi
-are spawned while overlay mode is on. Pond bed, ambient/click ripples, and water surface
-stay. Missing file, OpenCV failure, or `--no-overlay` falls back to the original
-procedural fish (nagomi-inspired click-call / scatter / depth — original pygame code).
+Default: interactive procedural RealisticKoi (click-call, Space scatter, ripples,
+swim states, depth). Smooth 60 FPS pond loop with SCALED + vsync when available.
 
-Overlay frames are chroma-keyed once at load into pygame Surfaces; the hot loop only
-advances a frame index (clock-synced to the video FPS) and blits. Fullscreen uses
-pygame SCALED + vsync when available (F11 or `--fullscreen`).
+MP4 overlay is optional only (`--overlay` or `O`). When the overlay is on, procedural
+fish are hidden so the two modes never mix. Overlay frames are chroma-keyed once into
+pygame Surfaces; the hot loop only advances a frame index. Overlay off by default —
+no MP4 load cost unless requested.
 
 Run:
     python animation/koi_fish.py
     python animation/koi_fish.py --fullscreen
-    python animation/koi_fish.py --no-overlay
+    python animation/koi_fish.py --overlay
 """
 
 from __future__ import annotations
@@ -42,7 +40,7 @@ HINT_FADE_S = 12.0
 
 _ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 DEFAULT_OVERLAY_MP4 = _ASSETS_DIR / "koi_fish_swimming_animated_overlay.mp4"
-# Full opacity in overlay-only mode (no procedural fish underneath/on top).
+# Full opacity when optional overlay mode is active (procedural fish hidden).
 OVERLAY_OPACITY = 1.0
 # Soft cap for the keyed Surface cache (~474 MiB for 150 frames @ 1150x720 RGBA).
 OVERLAY_CACHE_MAX_MB = 700.0
@@ -766,7 +764,7 @@ def draw_water_surface(surf, t):
         surf.blit(ps, (int(x - c), int(y - c)))
 
 
-def draw_hint(surf, elapsed, overlay_only: bool = False):
+def draw_hint(surf, elapsed, overlay_active: bool = False):
     """Brief on-screen control hint that fades after a few seconds."""
     if elapsed > HINT_FADE_S:
         return
@@ -774,15 +772,16 @@ def draw_hint(surf, elapsed, overlay_only: bool = False):
     alpha = int(210 * fade)
     if alpha < 8:
         return
-    if overlay_only:
+    if overlay_active:
         lines = [
+            "Overlay on — procedural fish hidden",
             "Click / tap — ripples",
-            "F11 — fullscreen    O — overlay    Esc — quit",
+            "O — procedural    F11 — fullscreen    Esc — quit",
         ]
     else:
         lines = [
             "Click / tap — call the koi",
-            "F11 — fullscreen    Space — scatter    Esc — quit",
+            "Space — scatter    O — overlay    F11 — fullscreen    Esc — quit",
         ]
     pad_x, pad_y = 14, 10
     rendered = [HINT_FONT.render(line, True, (220, 240, 250)) for line in lines]
@@ -803,14 +802,15 @@ def _parse_args(argv: list[str] | None = None):
     parser = argparse.ArgumentParser(description="Standalone pygame koi pond")
     parser.add_argument(
         "--overlay",
+        nargs="?",
+        const=DEFAULT_OVERLAY_MP4,
+        default=None,
         type=Path,
-        default=DEFAULT_OVERLAY_MP4,
-        help="MP4 full-pond overlay path (checkerboard-keyed; default when file exists)",
-    )
-    parser.add_argument(
-        "--no-overlay",
-        action="store_true",
-        help="Procedural fish only (ignore overlay MP4)",
+        help=(
+            "Optional keyed MP4 overlay (path optional; default asset). "
+            "Off by default — procedural RealisticKoi stay interactive. "
+            "When on, procedural fish are hidden (O toggles)."
+        ),
     )
     parser.add_argument(
         "--fullscreen",
@@ -818,6 +818,19 @@ def _parse_args(argv: list[str] | None = None):
         help="Start fullscreen (F11 toggles; SCALED logical 1150x720)",
     )
     return parser.parse_args(argv)
+
+
+def _load_overlay(path: Path) -> KoiOverlayVideo | None:
+    """Decode/key MP4 once into Surfaces. Returns None if unavailable."""
+    candidate = Path(path)
+    if not candidate.is_file():
+        print(f"[koi] Overlay file missing ({candidate}).", file=sys.stderr)
+        return None
+    print("[koi] Caching keyed overlay frames (one-time)…", file=sys.stderr)
+    overlay = KoiOverlayVideo(candidate, (W, H), opacity=OVERLAY_OPACITY)
+    if not overlay.available:
+        return None
+    return overlay
 
 
 def _spawn_procedural_koi() -> list[RealisticKoi]:
@@ -837,22 +850,20 @@ def main(argv: list[str] | None = None):
     screen = _create_display(fullscreen)
     pond_bed = create_pond_bed()
 
-    overlay = None
-    if not args.no_overlay:
-        candidate = Path(args.overlay)
-        if candidate.is_file():
-            print("[koi] Caching keyed overlay frames (one-time)…", file=sys.stderr)
-            overlay = KoiOverlayVideo(candidate, (W, H), opacity=OVERLAY_OPACITY)
-            if not overlay.available:
-                overlay = None
+    # Procedural fish are always the default interactive pond.
+    kois: list[RealisticKoi] = _spawn_procedural_koi()
+    overlay_path = Path(args.overlay) if args.overlay is not None else DEFAULT_OVERLAY_MP4
+    want_overlay = args.overlay is not None
+    overlay: KoiOverlayVideo | None = None
+    if want_overlay:
+        overlay = _load_overlay(overlay_path)
+        if overlay is not None:
+            overlay.enabled = True
+            print("[koi] Overlay mode (procedural fish hidden). Press O for interactive.", file=sys.stderr)
         else:
-            print(f"[koi] Overlay file missing ({candidate}); procedural-only.", file=sys.stderr)
-
-    # Overlay-only is the default: never mix MP4 fish with procedural RealisticKoi.
-    overlay_only = overlay is not None and overlay.available
-    kois: list[RealisticKoi] = [] if overlay_only else _spawn_procedural_koi()
-    if overlay_only:
-        print("[koi] Overlay-only mode (no procedural fish).", file=sys.stderr)
+            print("[koi] Staying on procedural interactive pond.", file=sys.stderr)
+    else:
+        print("[koi] Procedural interactive pond (O loads optional MP4 overlay).", file=sys.stderr)
 
     ripples = []
     ripple_timer = 0.0
@@ -867,6 +878,10 @@ def main(argv: list[str] | None = None):
             sim_time += dt
             assert screen is not None
 
+            overlay_active = (
+                overlay is not None and overlay.available and overlay.enabled
+            )
+
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
@@ -876,32 +891,57 @@ def main(argv: list[str] | None = None):
                     elif event.key == pygame.K_F11:
                         fullscreen = not fullscreen
                         screen = _create_display(fullscreen)
-                    elif event.key == pygame.K_SPACE and kois:
+                    elif event.key == pygame.K_SPACE and not overlay_active and kois:
                         for k in kois:
                             k.scatter()
                         for k in kois:
                             ripples.append(Ripple(k.x, k.y, max_r=90, strength=0.7))
-                    elif event.key == pygame.K_o and overlay is not None and overlay.available:
-                        overlay.enabled = not overlay.enabled
+                    elif event.key == pygame.K_o:
+                        if overlay is None:
+                            overlay = _load_overlay(overlay_path)
+                            if overlay is not None:
+                                overlay.enabled = True
+                                print(
+                                    "[koi] Overlay on (procedural hidden).",
+                                    file=sys.stderr,
+                                )
+                        elif overlay.available:
+                            overlay.enabled = not overlay.enabled
+                            if overlay.enabled:
+                                print(
+                                    "[koi] Overlay on (procedural hidden).",
+                                    file=sys.stderr,
+                                )
+                            else:
+                                print(
+                                    "[koi] Overlay off — interactive procedural.",
+                                    file=sys.stderr,
+                                )
+                        overlay_active = (
+                            overlay is not None
+                            and overlay.available
+                            and overlay.enabled
+                        )
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     mx, my = event.pos
                     ripples.append(Ripple(mx, my, max_r=140, strength=1.15))
-                    for k in kois:
-                        k.attract_to(mx, my)
+                    if not overlay_active:
+                        for k in kois:
+                            k.attract_to(mx, my)
 
             screen.blit(pond_bed, (0, 0))
 
-            if overlay is not None:
+            if overlay_active:
+                assert overlay is not None
                 overlay.update(dt)
                 overlay.draw(screen)
+            else:
+                # Interactive procedural fish only when overlay is off (no mix).
+                for k in sorted(kois, key=lambda fish: fish.depth, reverse=True):
+                    k.update(dt)
+                    k.draw(screen)
 
-            # Procedural fish only when overlay-only is off (--no-overlay / missing MP4).
-            for k in sorted(kois, key=lambda fish: fish.depth, reverse=True):
-                k.update(dt)
-                k.draw(screen)
-
-            # Occasional ripples from near-surface procedural fish motion.
-            if kois:
+                # Occasional ripples from near-surface procedural fish motion.
                 ripple_timer += dt
                 if ripple_timer > 0.75:
                     ripple_timer = 0.0
@@ -936,7 +976,7 @@ def main(argv: list[str] | None = None):
                     ripples.remove(r)
 
             draw_water_surface(screen, sim_time)
-            draw_hint(screen, sim_time, overlay_only=overlay_only)
+            draw_hint(screen, sim_time, overlay_active=overlay_active)
 
             pygame.display.flip()
     finally:

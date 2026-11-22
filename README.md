@@ -90,7 +90,7 @@ python animation\koi_fish.py
 
 `ascii_reveal` writes an mp4. The others open a window. `stippling_art` expects a local `monalisa.jpg` next to the script, and that image is not committed. Generated mp4 files are not committed.
 
-`animation/koi_fish.py` is a standalone pygame koi pond. Default loads interactive sprites from `animation/assets/koi/` (`white` / `asagi` / `gold` / `platinum` / `tea` / `black` PNG; aquarium bed + lily layout from `aquarium.svg`). Click/tap call, Space scatter, ripples, slow swim, soft circuits, depth; lily/lotus above fish; no HUD. `P` toggles asset sprites ↔ procedural pixel coats; `--procedural` forces procedural. Smooth 60 FPS with `F11` / `--fullscreen`. Optional MP4 overlay (`--overlay` / `O`) hides interactive fish. Large binaries under `animation/assets/koi/` (`*.gif`, `*.svg`, `*.mp4`) stay gitignored; small PNG variety sprites may be tracked. Esc quits. Requires `pygame` (+ `Pillow` for asset sprites).
+`animation/koi_fish.py` is a standalone pygame Realistic Living Koi Pond: `RealisticKoi` (full body/fins/barbels/3D shadow, 32-segment spine) on a procedural pond bed (depth gradient, stones) with caustics and swaying lily/lotus. Left click: ripples + feed pellets + attract; pellets disappear on contact. Right click: wider double ripples, no feed. Esc quits. Requires `pygame`.
 
 ## License
 
